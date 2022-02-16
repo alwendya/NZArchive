@@ -252,16 +252,23 @@ bool sorter(const NZArchive::Archive::FileEntryRead& left, const NZArchive::Arch
 }
 
 
-void InsertItemListbox(HWND _Hwnd, std::wstring _Message, int Position = 0 /*First item in the list*/)
+void InsertItemListbox(HWND _Hwnd, std::wstring _Message, int Position = 0 /*First item in the list*/,bool showDate = true)
 {
-	time_t     now = time(0);
-	struct tm  tstruct;
-	std::vector<wchar_t> Buffer(1024);
-	localtime_s(&tstruct, &now);
-	wcsftime(&Buffer[0], Buffer.size(), L"%Y-%m-%d %X", &tstruct);
-	std::wstring ConstMsg(Buffer.data());
-	ConstMsg += L" : " + _Message;
-	SendMessage(_Hwnd, LB_INSERTSTRING, Position, (LPARAM)ConstMsg.c_str());
+	if (showDate)
+	{
+		time_t     now = time(0);
+		struct tm  tstruct;
+		std::vector<wchar_t> Buffer(1024);
+		localtime_s(&tstruct, &now);
+		wcsftime(&Buffer[0], Buffer.size(), L"%Y-%m-%d %X", &tstruct);
+		std::wstring ConstMsg(Buffer.data());
+		ConstMsg += L" : " + _Message;
+		SendMessage(_Hwnd, LB_INSERTSTRING, Position, (LPARAM)ConstMsg.c_str());
+	}
+	else
+	{
+		SendMessage(_Hwnd, LB_INSERTSTRING, Position, (LPARAM)_Message.c_str());
+	}
 }
 
 // Description: 

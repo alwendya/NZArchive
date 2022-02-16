@@ -201,7 +201,20 @@ IF EXIST "$(SolutionDir)ExtraFiles\7zr.exe" (
     <ResourceCompile Include="NZArchive.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="ExtraFiles\NZAico64.ico" />
+    <Image Include="ExtraFiles\NZArchive.ico" />
     <Image Include="ExtraFiles\small.ico" />
+    <Image Include="ExtraFiles\_ABOUT.png.ico" />
+    <Image Include="ExtraFiles\_ADDTO.png.ico" />
+    <Image Include="ExtraFiles\_ARCINFO.png.ico" />
+    <Image Include="ExtraFiles\_CREATE.png.ico" />
+    <Image Include="ExtraFiles\_DELETE.png.ico" />
+    <Image Include="ExtraFiles\_EXTRACTALL.png.ico" />
+    <Image Include="ExtraFiles\_EXTRACTSEL.png.ico" />
+    <Image Include="ExtraFiles\_FILTER.png.ico" />
+    <Image Include="ExtraFiles\_LANG.png.ico" />
+    <Image Include="ExtraFiles\_OPEN.png.ico" />
+    <Image Include="ExtraFiles\_TEST.png.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

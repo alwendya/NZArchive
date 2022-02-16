@@ -75,5 +75,44 @@
     <Image Include="ExtraFiles\small.ico">
       <Filter>Fichiers de ressources</Filter>
     </Image>
+    <Image Include="ExtraFiles\NZArchive.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\NZAico64.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_ABOUT.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_ADDTO.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_ARCINFO.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_CREATE.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_DELETE.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_EXTRACTALL.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_EXTRACTSEL.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_FILTER.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_LANG.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_OPEN.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\_TEST.png.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
   </ItemGroup>
 </Project>

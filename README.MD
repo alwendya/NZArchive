@@ -19,7 +19,7 @@ UPDATE:
   * For speed issues, I added Windows BCrypt AES Engine (available since windows Vista) with hardware level encrypting/decrypting  
     If needed, TinyAES can still be used even if it is slower because of software encrypting/decrypting.  
     BCrypt and TinyAES encrypted block are the same inside, NZArchive will always read the file from both builds.    
-    ( You just have to comment/uncomnent '#define USEWINDOWS_BCRYPT' line in include\NZArchive\NZArchive.hpp )  
+    ( You just have to comment/uncomment '#define USEWINDOWS_BCRYPT' line in include\NZArchive\NZArchive.hpp )  
   * For integrity matters, I created my own parity system.  
     For each 32MiB block of the archive, a certain percentage can be recoverd if data get corrupted.  
     (I'm using Wirehair library to create recovery block)  

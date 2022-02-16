@@ -402,10 +402,10 @@ LRESULT CALLBACK MaindWndProcDialog(HWND hWnd, UINT message, WPARAM wParam, LPAR
 								DialogBox(hInst, MAKEINTRESOURCE(IDD_CheckTable), hWnd, IntegrityChecking);
 							if (NPARAnalysisConform == false)
 							{
-								MessageBox(hWnd, TRANSLATE(L"LBL_NPARDAMAGED_EXIT", L"Reparation failed, archive content is still damaged, exiting...").c_str()
+								MessageBox(hWnd, TRANSLATE(L"LBL_NPARDAMAGED_TRY", L"Reparation failed, archive content is still damaged, trying to open it anyway...").c_str()
 									, L"NZArchive", MB_ICONERROR);
-								PostMessage(hWnd, WM_COMMAND, IDM_EXIT, 0);
-								return DefWindowProc(hWnd, message, wParam, lParam);
+								//PostMessage(hWnd, WM_COMMAND, IDM_EXIT, 0);
+								//return DefWindowProc(hWnd, message, wParam, lParam);
 							}
 						}
 						CoTaskMemFree(pwsz);
@@ -980,6 +980,8 @@ INT_PTR CALLBACK InputPasswordDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 }
 INT_PTR CALLBACK ArchiveInformationDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	static HWND AI_LISTBOX = NULL;
+
 	UNREFERENCED_PARAMETER(lParam);
 	switch (message)
 	{
@@ -989,19 +991,26 @@ INT_PTR CALLBACK ArchiveInformationDialog(HWND hDlg, UINT message, WPARAM wParam
 	break;
 	case WM_INITDIALOG:
 	{
-		HWND AI_RESUME = GetDlgItem(hDlg, IDC_AI_RESUME);
+		AI_LISTBOX = GetDlgItem(hDlg, IDC_AI_ListInfo);
+		SendMessageW(AI_LISTBOX, LB_INITSTORAGE, 2000/*Pre allocate list box with 2000 items*/, 2048/*With 2048 bytes*/);
+		SendMessageW(AI_LISTBOX, LB_SETHORIZONTALEXTENT, (WPARAM)4000, 0);
+
 		SetWindowText(hDlg, TRANSLATE(L"LBL_AI_TITLE", L"Archive information").c_str());
 		SetWindowText(GetDlgItem(hDlg, ID_ARC_INF_CLOSE), TRANSLATE(L"LBL_AI_BTCCLOSE", L"Close").c_str());
 		NZArchive::Archive _LArchive;
 		_LArchive.archiveNZ_set_key(mPassword);
-		std::wstring ResumeConstruct = L"";
-		ResumeConstruct.append(TRANSLATE(L"LBL_AI_ARCHIVEFILES", L"* Archive path :\n'%s'\n\n", mArchiveName.c_str()));
+		InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_ARCHIVEFILES", L"Archive path :").c_str(), -1, false);
+		InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"'%s'", mArchiveName.c_str()).c_str(), -1, false);
+		InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
 		FILE* fIN;
 		_wfopen_s(&fIN, mArchiveName.c_str(), L"rb");
 		if (fIN != NULL)
 		{
 			NZArchive::Archive::ArchiveEntry Listing = _LArchive.archiveNZ_read_extract_file_list(fIN);
-			ResumeConstruct += TRANSLATE(L"LBL_AI_VERSION", L"* Using NZArchive version \n\t%s\n\n", Listing.NZArchiveVersion.c_str());
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_VERSION", L"NZArchive version used :").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"%s", Listing.NZArchiveVersion.c_str()).c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
+
 			std::wstring wsMETHOD = L"";
 			switch (Listing.EncryptionMethod)
 			{
@@ -1018,12 +1027,22 @@ INT_PTR CALLBACK ArchiveInformationDialog(HWND hDlg, UINT message, WPARAM wParam
 				break;
 			}
 
-			ResumeConstruct += TRANSLATE(L"LBL_AI_ENCRYPTION", L"* Encryption method :\n\t%s\n\n", wsMETHOD.c_str());
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_ENCRYPTION", L"Encryption method :").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"%s", wsMETHOD.c_str()).c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
 
-			ResumeConstruct += TRANSLATE(L"LBL_AI_COMPRESS", L"* Archive compressed size :\n\t%s bytes\n\n", thousandSeparator(Listing.FullArchiveIncludingHeader).c_str());
-			ResumeConstruct += TRANSLATE(L"LBL_AI_UNCOMPRESS", L"* Archive uncompressed size :\n\t%s bytes\n\n", thousandSeparator(Listing.ArchiveSizeUncompressed).c_str());
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_COMPRESS", L"Archive compressed size :").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_COMPRESS2", L"%s bytes", thousandSeparator(Listing.FullArchiveIncludingHeader).c_str()).c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
+
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_UNCOMPRESS", L"Archive uncompressed size :").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_UNCOMPRESS2", L"%s bytes", thousandSeparator(Listing.ArchiveSizeUncompressed).c_str()).c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
+
 			int lRatio = (int)((double)Listing.FullArchiveIncludingHeader * 100.0 / (double)Listing.ArchiveSizeUncompressed);
-			ResumeConstruct += TRANSLATE(L"LBL_AI_RATIO", L"* Archive compression ratio :\n\t%d%%\n\n", lRatio);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_RATIO", L"Archive compression ratio :").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"%d%%", lRatio).c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
 
 			uint64_t FileNbr = 0;
 			uint64_t DireNbr = 0;
@@ -1032,13 +1051,15 @@ INT_PTR CALLBACK ArchiveInformationDialog(HWND hDlg, UINT message, WPARAM wParam
 					DireNbr++;
 				else
 					FileNbr++;
-			ResumeConstruct += TRANSLATE(L"LBL_AI_NBFILES", L"* Number of file(s) :\n\t%s file(s)\n\n", thousandSeparator(FileNbr).c_str());
-			ResumeConstruct += TRANSLATE(L"LBL_AI_NBDIR", L"* Number of folder(s) :\n\t%s folder(s)", thousandSeparator(DireNbr).c_str());
+
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_NBFILES", L"Number of file(s) :").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_NBFILES2", L"%s file(s)", thousandSeparator(FileNbr).c_str()).c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_NBDIR", L"Number of folder(s) :").c_str(), -1, false);
+			InsertItemListbox(AI_LISTBOX, TRANSLATE(L"LBL_AI_NBDIR2", L"%s folder(s)", thousandSeparator(DireNbr).c_str()).c_str(), -1, false);
+
 			fclose(fIN);
 		}
-		ResumeConstruct = replaceAll(ResumeConstruct, L"\\n", L"\r\n");
-		ResumeConstruct = replaceAll(ResumeConstruct, L"\\t", L"\t");
-		SetWindowText(AI_RESUME, ResumeConstruct.c_str());
 		CenterWindow(hDlg);
 	}
 	return (INT_PTR)FALSE;
