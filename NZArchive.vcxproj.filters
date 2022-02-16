@@ -19,6 +19,9 @@
     <Filter Include="Fichiers sources\Wirehair">
       <UniqueIdentifier>{0a04c527-b246-452a-8c5f-3ebbbe5655c6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Fichiers sources\Personnal extension">
+      <UniqueIdentifier>{5f443fe4-50da-4a2b-b924-d1df8bf76249}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -30,13 +33,13 @@
     <ClInclude Include="Resource.h">
       <Filter>Fichiers d%27en-tête</Filter>
     </ClInclude>
-    <ClInclude Include="include\Translator.hpp">
-      <Filter>Fichiers d%27en-tête</Filter>
-    </ClInclude>
     <ClInclude Include="include\pathHelper.h">
       <Filter>Fichiers d%27en-tête</Filter>
     </ClInclude>
     <ClInclude Include="include\WindowsExplorerHELPER.hpp">
+      <Filter>Fichiers d%27en-tête</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Translator.hpp">
       <Filter>Fichiers d%27en-tête</Filter>
     </ClInclude>
   </ItemGroup>
@@ -46,9 +49,6 @@
     </ClCompile>
     <ClCompile Include="include\tinyaes.c">
       <Filter>Fichiers sources\TinyAES</Filter>
-    </ClCompile>
-    <ClCompile Include="WindowsExplorerHELPER.cpp">
-      <Filter>Fichiers sources</Filter>
     </ClCompile>
     <ClCompile Include="include\wirehair\wirehair.cpp">
       <Filter>Fichiers sources\Wirehair</Filter>
@@ -62,6 +62,9 @@
     <ClCompile Include="include\wirehair\gf256.cpp">
       <Filter>Fichiers sources\Wirehair</Filter>
     </ClCompile>
+    <ClCompile Include="include\WindowsExplorerHELPER.cpp">
+      <Filter>Fichiers sources\Personnal extension</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="NZArchive.rc">
@@ -70,45 +73,6 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="ExtraFiles\small.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\NZArchive.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\NZAico64.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_ABOUT.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_ADDTO.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_ARCINFO.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_CREATE.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_DELETE.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_EXTRACTALL.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_EXTRACTSEL.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_FILTER.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_LANG.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_OPEN.png.ico">
-      <Filter>Fichiers de ressources</Filter>
-    </Image>
-    <Image Include="ExtraFiles\_TEST.png.ico">
       <Filter>Fichiers de ressources</Filter>
     </Image>
   </ItemGroup>

@@ -143,6 +143,7 @@ IF EXIST "$(SolutionDir)ExtraFiles\7zr.exe" (
      "$(SolutionDir)ExtraFiles\7zr.exe" a "$(TargetDir)NZArchive-StandaloneV0.0.0.7z" "$(TargetDir)NZArchive.exe" "$(TargetDir)LICENSE.MD" "$(TargetDir)LICENSE.LIBRARY.MD" "$(TargetDir)README.MD" -mx9
      "$(SolutionDir)ExtraFiles\7zr.exe" a "$(TargetDir)NZArchive-With.TranslationV0.0.0.7z" "$(TargetDir)NZArchive.exe" "$(TargetDir)Language" "$(TargetDir)LICENSE.MD" "$(TargetDir)README.MD" "$(TargetDir)LICENSE.LIBRARY.MD" -mx9
 )</Command>
+      <Message>Placing output files</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -166,16 +167,17 @@ IF EXIST "$(SolutionDir)ExtraFiles\7zr.exe" (
     <PostBuildEvent>
       <Command>echo "Copying Languages files..."
 mkdir "$(TargetDir)Language"
-copy "$(SolutionDir)Language\*.trd" "$(TargetDir)Language"
+copy "$(SolutionDir)ExtraFiles\Language\*.trd" "$(TargetDir)Language"
 
-copy "$(SolutionDir)License-*.md" "$(TargetDir)LICENSE.LIBRARY.MD" /B
+copy "$(SolutionDir)ExtraFiles\License-*.md" "$(TargetDir)LICENSE.LIBRARY.MD" /B
 copy "$(SolutionDir)LICENSE.md" "$(TargetDir)LICENSE.MD"
 copy "$(SolutionDir)README.md" "$(TargetDir)README.MD"
 
-IF EXIST "$(SolutionDir)Extra files\7zr.exe" (
-     "$(SolutionDir)Extra files\7zr.exe" a "$(TargetDir)NZArchive-StandaloneV0.0.0.7z" "$(TargetDir)NZArchive.exe" "$(TargetDir)LICENSE.MD" "$(TargetDir)LICENSE.LIBRARY.MD" "$(TargetDir)README.MD" -mx9
-     "$(SolutionDir)Extra files\7zr.exe" a "$(TargetDir)NZArchive-With.TranslationV0.0.0.7z" "$(TargetDir)NZArchive.exe" "$(TargetDir)Language" "$(TargetDir)LICENSE.MD" "$(TargetDir)README.MD" "$(TargetDir)LICENSE.LIBRARY.MD" -mx9
+IF EXIST "$(SolutionDir)ExtraFiles\7zr.exe" (
+     "$(SolutionDir)ExtraFiles\7zr.exe" a "$(TargetDir)NZArchive-StandaloneV0.0.0.7z" "$(TargetDir)NZArchive.exe" "$(TargetDir)LICENSE.MD" "$(TargetDir)LICENSE.LIBRARY.MD" "$(TargetDir)README.MD" -mx9
+     "$(SolutionDir)ExtraFiles\7zr.exe" a "$(TargetDir)NZArchive-With.TranslationV0.0.0.7z" "$(TargetDir)NZArchive.exe" "$(TargetDir)Language" "$(TargetDir)LICENSE.MD" "$(TargetDir)README.MD" "$(TargetDir)LICENSE.LIBRARY.MD" -mx9
 )</Command>
+      <Message>Placing output files</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -199,20 +201,7 @@ IF EXIST "$(SolutionDir)Extra files\7zr.exe" (
     <ResourceCompile Include="NZArchive.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="ExtraFiles\NZArchive.ico" />
-    <Image Include="ExtraFiles\NZAico64.ico" />
     <Image Include="ExtraFiles\small.ico" />
-    <Image Include="ExtraFiles\_ABOUT.png.ico" />
-    <Image Include="ExtraFiles\_ADDTO.png.ico" />
-    <Image Include="ExtraFiles\_ARCINFO.png.ico" />
-    <Image Include="ExtraFiles\_CREATE.png.ico" />
-    <Image Include="ExtraFiles\_DELETE.png.ico" />
-    <Image Include="ExtraFiles\_EXTRACTALL.png.ico" />
-    <Image Include="ExtraFiles\_EXTRACTSEL.png.ico" />
-    <Image Include="ExtraFiles\_FILTER.png.ico" />
-    <Image Include="ExtraFiles\_LANG.png.ico" />
-    <Image Include="ExtraFiles\_OPEN.png.ico" />
-    <Image Include="ExtraFiles\_TEST.png.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

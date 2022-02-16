@@ -75,9 +75,9 @@ std::vector<WindowsExplorerHelper::ExplorerFolderInfo>WindowsExplorerHelper::Get
 		{
 			// Take ownership of the PIDL via std::unique_ptr.
 			info.pidl = UniquePidlPtr{ pidl };
-			info.PeekID = 0x5000 + result.size();
+			info.PeekID = 0x5000 + (int)result.size();
 			std::vector<wchar_t> vpath(32767);
-			if (::SHGetPathFromIDListEx(info.pidl.get(), &vpath[0], vpath.size(), 0))
+			if (::SHGetPathFromIDListEx(info.pidl.get(), &vpath[0], (DWORD)vpath.size(), 0))
 				info.Path = std::wstring(vpath.data());
 
 			result.push_back(std::move(info));
