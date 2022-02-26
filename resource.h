@@ -1,8 +1,9 @@
 //{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ generated include file.
-// Used by NZArchive.rc
+// fichier Include Microsoft Visual C++.
+// Utilisé par NZArchive.rc
 //
 #define IDC_MYICON                      2
+#define IDC_YFC_B_PICK                  3
 #define IDD_NZAGUI_DIALOG               102
 #define IDS_APP_TITLE                   103
 #define IDD_ABOUTBOX                    103
@@ -35,6 +36,10 @@
 #define IDI_OPEN                        153
 #define IDI_TEST                        154
 #define IDD_CheckTable                  157
+#define IDR_ZSTDFILE1                   158
+#define IDR_ZSTDRobotoCondensedRegularTTF 158
+#define IDI_NBOX                        159
+#define IDD_YesFolderCancel             160
 #define ID_PWD_TEXTBOX                  1000
 #define ID_PWD_OK                       1001
 #define ID_PWD_CANCEL                   1002
@@ -113,6 +118,7 @@
 #define IDC_CREATE_Edit_SourceFolder    1061
 #define ID_ADD_CLOSE                    1061
 #define IDC_ADD_BROWSE                  1062
+#define IDC_CREATE_DROPLIST_CPU         1062
 #define IDC_RADIOFILE                   1063
 #define IDC_RADIOFOLDER                 1064
 #define IDC_STATIC_ADD                  1065
@@ -127,11 +133,13 @@
 #define IDC_STATIC_AVANCEMENT2          1074
 #define IDC_CREATE_RADIOCHACHA          1075
 #define ADD_LBL_NBTHREAD1               1075
+#define LBLCREATE_LBL_THREAD1           1075
 #define IDC_CREATE_RADIOAES256          1076
 #define IDC_ADD_SLIDERTHR               1076
 #define IDC_CREATE_RADIONONE            1077
 #define ADD_LBL_NBTHREAD2               1077
 #define IDC_CREATE_ListInfo             1078
+#define IDC_ADD_DROPLIST_CPU2           1078
 #define EXTRACT_LISTBOX                 1079
 #define IDC_ADD_LISTBOX                 1080
 #define TEST_LBOX                       1081
@@ -139,6 +147,15 @@
 #define IDC_INTEGRITY_PROGRESS          1086
 #define IDC_INTEGRITY_LISTBOX           1087
 #define IDC_AI_ListInfo                 1088
+#define IDC_CREATE_DROPLIST_LEVELCOMP   1092
+#define IDC_ABOUT0                      1093
+#define IDC_ABOUT1                      1094
+#define IDC_ABOUT2                      1095
+#define IDC_ABOUT3                      1096
+#define IDC_ADD_DROPLIST_LEVELCOMP      1097
+#define IDC_YFC_EDIT                    1098
+#define IDC_YFC_B_OK                    1099
+#define IDC_YFC_B_CANCEL                1100
 #define ID_FILE_OPENARCHIVE             32771
 #define ID_FILE_ARCHIVEINFORMATION      32772
 #define ID_FILE_CREATEARCHIVE           32773
@@ -178,15 +195,16 @@
 #define ID_SETTINGS_ASSOCIATENZARCHIVEWITHNZAFILES 32831
 #define ID_SETTINGS_REMOVENZAASSOCIATION 32832
 #define IDC_STATIC                      -1
+#define IDC_YFC_LABEL                   -1
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        158
+#define _APS_NEXT_RESOURCE_VALUE        161
 #define _APS_NEXT_COMMAND_VALUE         32833
-#define _APS_NEXT_CONTROL_VALUE         1089
+#define _APS_NEXT_CONTROL_VALUE         1101
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif

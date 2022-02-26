@@ -114,5 +114,11 @@
     <Image Include="ExtraFiles\_TEST.png.ico">
       <Filter>Fichiers de ressources</Filter>
     </Image>
+    <Image Include="ExtraFiles\NotifyBOX.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ExtraFiles\RobotoCondensed-Regular.ttf.zstd" />
   </ItemGroup>
 </Project>

@@ -1,691 +1,761 @@
 ﻿#pragma once
-/*
-* If USEWINDOWS_BCRYPT is defined, NZArchive will use windows NGEN library for AES256 encryption (Hardware => Faster)
-* if USEWINDOWS_BCRYPT is not defined, NZArchive wil use TinyAES (No windows dependency) fro AE256 encryption (Software => Slower)
-* It's your choice to uncomment or comment next line... 
-*/
-#define USEWINDOWS_BCRYPT
-//#pragma execution_character_set("utf-8")
-#include <iostream>
-#include <vector>
-#include <string>
-//#include <sstream>
-#include <fstream> //File seeking function
-#include <filesystem> //All about file information, copying, iterating
-#include <algorithm> //Random things
-#include <mutex> //Interthread locking
-#include <io.h> //_get_osfhandle 
-
-#include "chacha.hpp" // https://github.com/cooky451/chacha	MIT Licence
-#include "xxh3.h" //	https://github.com/Cyan4973/xxHash	BSD2 Clause licence
-#define ZSTD_STATIC_LINKING_ONLY
-#include "zstd.h" //	https://github.com/facebook/zstd	BSD Licence
-#include <wirehair/wirehair.h>
-#ifdef USEWINDOWS_BCRYPT
-#include <bcrypt.h>
-#pragma comment (lib, "bcrypt.lib")
-#else
-#include <tinyaes.hpp> // https://github.com/kokke/tiny-AES-c	The Unlicense licence (Public)	//No accelerated AES
-#endif // USEWINDOWS_BCRYPT
-
 #ifndef NZARCHIVE_HEADER
 #define NZARCHIVE_HEADER
 #endif // !NZARCHIVE_HEADER
 
-uint64_t WIREHAIR_RetrievePercentFromFile(std::wstring _File)
+/*
+::::    ::: :::::::::     :::     :::::::::   ::::::::  :::    ::: ::::::::::: :::     ::: ::::::::::
+:+:+:   :+:      :+:    :+: :+:   :+:    :+: :+:    :+: :+:    :+:     :+:     :+:     :+: :+:
+:+:+:+  +:+     +:+    +:+   +:+  +:+    +:+ +:+        +:+    +:+     +:+     +:+     +:+ +:+
++#+ +:+ +#+    +#+    +#++:++#++: +#++:++#:  +#+        +#++:++#++     +#+     +#+     +:+ +#++:++#
++#+  +#+#+#   +#+     +#+     +#+ +#+    +#+ +#+        +#+    +#+     +#+      +#+   +#+  +#+
+#+#   #+#+#  #+#      #+#     #+# #+#    #+# #+#    #+# #+#    #+#     #+#       #+#+#+#   #+#
+###    #### ######### ###     ### ###    ###  ########  ###    ### ###########     ###     ##########
+
+-----------------------------------------------------------------------------------------------------
+
+Header only library
+
+NZAʀᴄʜɪᴠᴇ is a fast and encrypted archive format using ZStandard for fast compression
+and blazing fast decompression no matter the compression level.
+Encryption is using 20 round Chacha 256 bits or AES 256 buts.
+Written in C++17 and oriented to 64 bits application.
+
+
+▄ External library used ▄
+-------------------------
+	- ZSTD		: ZStandard compression
+	- Bcrypt	: Windows NextGen compression library (present starting Windows Vista, can be replaced by TinyAES if needed)
+
+▄ Using this internal library ▄
+-------------------------------
+	- Wirehair	: Library for generating code recovery for incomplete file
+	- XXHASH	: Hashing library
+
+▄ Revisionning ▄
+----------------
+	Version 1.5.0	:	Optimization of Wirehair function inside NZArchive.
+	Version 1.4.0	:	Integration of Wirehair to create receovery file.
+						For each 32MiB, a percentage of extra block is created and allow 
+						to recover damaged part of the 32Mib block.
+	Version 1.3.0	:	Modification of TinyAES256 Encryot/Decrypt function in CBC Mode
+						to ensure compatibility with Archive using BCrypt (And the invert too). 
+						by creating a padding method to ensure block s a multiple of 16 bytes
+						(Standard definition of AES256 block size)
+	Version 1.2.0	:	Added AES256 support with BCrypt 
+						(Hardware AES256 encryption/decryption CBC mode built in Windows starting Vista edition)
+	Version 1.1.0	:	Change header method, now it's a separate chunk of byte, 
+						compressed and crypted at the end of the NZArchive
+	Version 1.0.0	:	First milestone, I think's it's stable enough for daily usage
+	Version 0.9.0	:	Added AES256 support with TinyAES (Software AES256 encryption/decryption CTR mode)
+	Version 0.8.0	:	Total rewriting of function name for easier comprehension and usage
+	Version 0.7.0	:	Implementation of function to get file list of archive in a readable way
+	Version 0.6.0	:	Implementation of Unicode file support with std::wstring to
+						std::byte (unsigned char) conversion to save and read unicode encoded namefrom/to file
+	Version 0.5.0	:	Usage of mutex lock for interthread call. eg. progress report from a detached thread
+	Version 0.4.0	:	Implementation of ZStandard 1.5.0 for speed and reliable compression
+	Version 0.3.0	:	Implementation of XX3Hash 0.8.0 to ensure data integrity
+	Version 0.2.0	:	Implementation of ChaCha20 256bits 20 round for encryption
+	Version 0.1.0	:	Definition of NZArchive standard, only copy fonction for the moment
+
+▄ TODO ▄
+--------
+	- Optimization...
+	- Error management in a log file
+*/
+#define NZARCHIVE_MAJOR		1
+#define NZARCHIVE_MINOR		5
+#define NZARCHIVE_REVISION	0
+
+/*
+If USEWINDOWS_BCRYPT is defined, NZArchive will use windows NGEN library for AES256 encryption (Hardware => Faster)
+if USEWINDOWS_BCRYPT is not defined, NZArchive wil use TinyAES (No windows dependency) fro AE256 encryption (Software => Slower)
+It's your choice to uncomment or not next line...
+*/
+#define USEWINDOWS_BCRYPT
+
+
+/*	  _____            _           _
+	  \_   \_ __   ___| |_   _  __| | ___
+	   / /\/ '_ \ / __| | | | |/ _` |/ _ \
+	/\/ /_ | | | | (__| | |_| | (_| |  __/
+	\____/ |_| |_|\___|_|\__,_|\__,_|\___|	*/
+#include <iostream>				// Basic IO function
+#include <vector>				// Vector management
+#include <string>				// Standard string
+#include <fstream>				// File seeking function
+#include <filesystem>			// All about file information, copying, iterating
+#include <algorithm>			// Random things
+#include <mutex>				// Interthread locking
+#include <io.h>					// _get_osfhandle 
+#include "chacha.hpp"			// https://github.com/cooky451/chacha	MIT Licence
+#include "xxh3.h"				// https://github.com/Cyan4973/xxHash	BSD2 Clause licence
+#define ZSTD_STATIC_LINKING_ONLY
+#include "zstd.h"				// https://github.com/facebook/zstd	BSD Licence
+#include <wirehair/wirehair.h>	// Code error correction generator
+#ifdef USEWINDOWS_BCRYPT
+#include <bcrypt.h>				// Windows AES library (strating Vista) [hardware encryption/decryption]
+#pragma comment (lib, "bcrypt.lib")
+#else
+#include <tinyaes.hpp>			// https://github.com/kokke/tiny-AES-c	The Unlicense licence (Public) [software encryption/decryption]
+#endif // USEWINDOWS_BCRYPT
+	/*	 __    __ _          _           _        _          _
+		/ / /\ \ (_)_ __ ___| |__   __ _(_)_ __  | |__   ___| |_ __   ___ _ __
+		\ \/  \/ / | '__/ _ \ '_ \ / _` | | '__| | '_ \ / _ \ | '_ \ / _ \ '__|
+		 \  /\  /| | | |  __/ | | | (_| | | |    | | | |  __/ | |_) |  __/ |
+		  \/  \/ |_|_|  \___|_| |_|\__,_|_|_|    |_| |_|\___|_| .__/ \___|_|
+															  |_|
+	*/
+	/// @brief	Wirehair namespace containing the helper class
+namespace WireHair
 {
-	FILE* fSRC = NULL;
-	_wfopen_s(&fSRC, _File.c_str(), L"rb");
-	if (fSRC == NULL)
-		return 0;
-	else
+	class Helper
 	{
-		_fseeki64(fSRC, 0, SEEK_END);
-		if (_ftelli64(fSRC) < 4)
-			return 0;
-		_fseeki64(fSRC, 0, SEEK_SET);
-		std::vector<uint8_t> vec_uint64;
-		vec_uint64.resize(sizeof(uint64_t));
-		fread_s(&vec_uint64[0], sizeof(uint64_t), sizeof(uint8_t), sizeof(uint64_t), fSRC);
-		uint64_t val; memcpy_s(&val, sizeof(val), &vec_uint64[0], sizeof(val));
-		vec_uint64.clear();
-		fclose(fSRC);
-		return val;
-	}
-	return 0;
-}
-/// <summary>WireairHELPER namespace declaration</summary>
-class WireHairHelper
-{
-public:
-	enum class GenerateError : uint8_t {
-		G_Success, G_CantOpenNPARFile, G_CantOpenArchiveFile, G_CantInitWirehair, G_UnknownError
-	};
-	enum class CandRError : uint8_t {
-		C_CantOpenNPARFile, C_CantOpenArchiveFile, C_ArchiveIsNotSameSize, C_NeedNoRepair, C_CantCreateRepairFile, C_UnknownError, C_RepairSuccess, C_RepairFailedNotEnoughBlockToRepair
-	};
-
-	enum class Progression : uint8_t {
-		P_None, P_CreateTable, P_AnalysingFile, P_Repairing, P_Error, P_Success
-	};
+	public:
+		// Generation error codelist
+		enum class GenerateError : uint8_t {
+			G_Success, G_CantOpenNPARFile, G_CantOpenArchiveFile, G_CantInitWirehair, G_UnknownError
+		};
+		// Control and repair error codelist
+		enum class CandRError : uint8_t {
+			C_CantOpenNPARFile, C_CantOpenArchiveFile, C_ArchiveIsNotSameSize, C_NeedNoRepair, C_CantCreateRepairFile, C_UnknownError, C_RepairSuccess, C_RepairFailedNotEnoughBlockToRepair
+		};
+		// Progression status
+		enum class Progression : uint8_t {
+			P_None, P_CreateTable, P_AnalysingFile, P_Repairing, P_Error, P_Success
+		};
 
 
+		/// @brief	Set path of NPAR file and archive file
+		/// @param	FileToProceed	Full path of the file to proceed
+		/// @param	FilePAR		Length of the random wstring sequence
+		void SetPATH(std::wstring FileToProceed, std::wstring FileNPAR)
+		{
+			mFiletoprocess = FileToProceed;
+			mFilePar = FileNPAR;
+			mCreateProgress = 0.0;
+			mCreateType = Progression::P_None;
+			mRepairProgress = 0.0;
+			mRepairType = Progression::P_None;
+		}
 
-	void SetPATH(std::wstring FileToProceed, std::wstring FilePAR)
-	{
-		mFiletoprocess = FileToProceed;
-		mFilePar = FilePAR;
-		mCreateProgress = 0.0;
-		mCreateType = Progression::P_None;
-		mRepairProgress = 0.0;
-		mRepairType = Progression::P_None;
-	}
-	WireHairHelper()
-	{
-		const WirehairResult initResult = wirehair_init();
-		mFiletoprocess = L"";
-		mFilePar = L"";
-	}
+		/// @brief	Helper initialization
+		Helper()
+		{
+			const WirehairResult initResult = wirehair_init();
+			mFiletoprocess = L"";
+			mFilePar = L"";
+		}
 
-	~WireHairHelper()
-	{}
-	GenerateError GenerateNPARfile(int PercentRedundancy)
-	{
-		mtxCreate.lock();
-		mCreateProgress = 0.0;
-		mCreateType = Progression::P_CreateTable;
-		mtxCreate.unlock();
-		FILE* fSRC = NULL;
-		FILE* fDST = NULL;
-		_wfopen_s(&fSRC, mFiletoprocess.c_str(), L"rb");
-		if (fSRC == NULL)
+		/// @brief	Helper liberation
+		~Helper()
+		{}
+
+		/// @brief	Generate a given percentage of recovery block for the source file
+		/// @param	PercentRedundancy	Percentage of recovery block to generate basing of the source file
+		/// @return	GenerateError with the generation status
+		GenerateError GenerateNPARfile(int PercentRedundancy)
 		{
 			mtxCreate.lock();
 			mCreateProgress = 0.0;
-			mCreateType = Progression::P_Error;
+			mCreateType = Progression::P_CreateTable;
 			mtxCreate.unlock();
-			return GenerateError::G_CantOpenArchiveFile;
-		}
-		_wfopen_s(&fDST, mFilePar.c_str(), L"wb");
-		if (fDST == NULL)
-		{
-			mtxCreate.lock();
-			mCreateProgress = 0.0;
-			mCreateType = Progression::P_Error;
-			mtxCreate.unlock();
-			fclose(fSRC);
-			return GenerateError::G_CantOpenNPARFile;
-		}
-		uint64_t FILESize = std::filesystem::file_size(mFiletoprocess);
-		uint64_t RemainSize = FILESize;
-		uint64_t BLOCKid = -1;
-		FILE_write64(fDST, PercentRedundancy);//Percentage
-		FILE_write64(fDST, kMessageBytes);//Defaut message (buffer) size
-		FILE_write64(fDST, kPacketSize);//Defaut packet size
-		FILE_write64(fDST, FILESize);//Filesize
-
-		while (true)//For each 32MB block
-		{
-			BLOCKid++;
-			uint64_t BUFFER = kMessageBytes;
-			if (RemainSize <= kMessageBytes)
-				BUFFER = RemainSize;
-			std::vector<uint8_t> message(BUFFER);
-			fread_s(&message[0], BUFFER, sizeof(std::byte), BUFFER, fSRC);
-			WirehairCodec encoder = wirehair_encoder_create(nullptr, &message[0], BUFFER, kPacketSize);
-			if (!encoder)
+			FILE* fSRC = NULL;
+			FILE* fDST = NULL;
+			_wfopen_s(&fSRC, mFiletoprocess.c_str(), L"rb");
+			if (fSRC == NULL)
 			{
 				mtxCreate.lock();
 				mCreateProgress = 0.0;
 				mCreateType = Progression::P_Error;
 				mtxCreate.unlock();
-				fclose(fDST);
+				return GenerateError::G_CantOpenArchiveFile;
+			}
+			_wfopen_s(&fDST, mFilePar.c_str(), L"wb");
+			if (fDST == NULL)
+			{
+				mtxCreate.lock();
+				mCreateProgress = 0.0;
+				mCreateType = Progression::P_Error;
+				mtxCreate.unlock();
 				fclose(fSRC);
-				return GenerateError::G_CantInitWirehair;
+				return GenerateError::G_CantOpenNPARFile;
 			}
-			int nbBlockBase = BUFFER / kPacketSize;
-			if (BUFFER % kPacketSize > 0) nbBlockBase++;//Round up block size, if null, at least one block is created with content
-			FILE_write64(fDST, BLOCKid);//BlockNumber
-			FILE_write64(fDST, nbBlockBase);//BaseBlock
-			for (size_t i = 0; i < nbBlockBase; i++)//Create packet hash table
-			{
-				uint64_t szPacket = ((message.size() - (kPacketSize * i)) >= kPacketSize) ? kPacketSize : message.size() - (kPacketSize * i);
-				uint64_t hashPacket = XXH3_64bits(&message[kPacketSize * i], szPacket);
-				FILE_write64(fDST, hashPacket);//BaseBlock
-			}
-			int nbBlockToCreate = (int)((((double)BUFFER / 100.0) * (double)PercentRedundancy) / (double)kPacketSize);
-			FILE_write64(fDST, nbBlockToCreate);//BaseBlock
-			FILE_write64(fDST, XXH3_64bits(&message[0], message.size()));//HASHSOURCE
-			std::vector<uint8_t> Fountain;
-			for (size_t i = 0; i < nbBlockToCreate; i++)//100 equal 10 percent of 32Mb (3,2Mb)
-			{
-				std::vector<uint8_t> block(kPacketSize);	// Encode a packet
-				uint32_t writeLen = 0;
-				WirehairResult encodeResult = wirehair_encode(
-					encoder, // Encoder object
-					nbBlockBase + i, // ID of block to generate (nbblockbase = original file, after is redundant data)
-					&block[0], // Output buffer
-					kPacketSize, // Output buffer size
-					&writeLen); // Returned block length
-				Fountain.resize(Fountain.size() + block.size());
-				memcpy_s(&Fountain[Fountain.size() - block.size()], block.size(), &block[0], block.size());
-			}
-			FILE_write64(fDST, XXH3_64bits(&Fountain[0], Fountain.size()));//HASHSOURCE
-			FILE_write64(fDST, Fountain.size());//HASHSOURCE
-			fwrite(&Fountain[0], sizeof(std::byte), Fountain.size(), fDST);
-			mtxCreate.lock();
-			mCreateProgress = ((double)_ftelli64(fSRC) * 100.0) / (double)FILESize;
-			OutputDebugString(L"Create table : ");
-			OutputDebugString(std::to_wstring(mCreateProgress).c_str());
-			OutputDebugString(L"%%\n");
-			mtxCreate.unlock();
-			wirehair_free(encoder);
-			RemainSize -= BUFFER;
-			if (RemainSize == 0)//End reached
-				break;
-		}
-		fclose(fDST);
-		fclose(fSRC);
-		mtxCreate.lock();
-		mCreateProgress = 100.0;
-		mCreateType = Progression::P_Success;
-		mtxCreate.unlock();
-		return GenerateError::G_Success;
-	}
-	double GenerateProgress(Progression& _CreateType)
-	{
-		double lProgress = 0.0;
-		mtxCreate.lock();
-		lProgress = mCreateProgress;
-		_CreateType = mCreateType;
-		mtxCreate.unlock();
-		return lProgress;
-	}
-	double ControlAndRepairProgress(Progression& ProgType)
-	{
-		double lProgress = 0.0;
-		mtxRepair.lock();
-		lProgress = mRepairProgress;
-		ProgType = mRepairType;
-		mtxRepair.unlock();
-		return lProgress;
-	}
-	struct TableNPARblock
-	{
-		std::vector<uint64_t>PacketHash;
-		uint64_t BaseOffset;
-		uint64_t BLOCKid;
-		uint64_t nbBlockBase;
-		uint64_t nbBlockToCreate;
-		uint64_t HashSource;
-		uint64_t HashRecovery;
-		uint64_t DataSize;
-		bool BlocCorrupted = false;
-		bool needRepairing = false;
-	};
-	struct TableNPAR
-	{
-		uint64_t PercentRedundancy;//Percentage
-		uint64_t kMessageBytes;//Message size (Buffer)
-		uint64_t kPacketSize;//Packet size
-		uint64_t FILESize;//File size
-		std::vector<TableNPARblock> Block;
-	};
-	CandRError ControlAndRepair()
-	{
-		/*
-		* First thing first, let's parse the table
-		*/
-		TableNPAR mTable;
-		uint64_t ArcFileSize;
-		FILE* fTable = NULL;
-		mtxRepair.lock();
-		mRepairProgress = 0.0;
-		mRepairType = Progression::P_None;
-		mtxRepair.unlock();
+			uint64_t FILESize = std::filesystem::file_size(mFiletoprocess);
+			uint64_t RemainSize = FILESize;
+			uint64_t BLOCKid = -1;
+			FILE_write64(fDST, PercentRedundancy);//Percentage
+			FILE_write64(fDST, kMessageBytes);//Defaut message (buffer) size
+			FILE_write64(fDST, kPacketSize);//Defaut packet size
+			FILE_write64(fDST, FILESize);//Filesize
 
-
-		_wfopen_s(&fTable, mFilePar.c_str(), L"rb");
-		if (fTable != NULL)
-		{
-			_fseeki64(fTable, 0, SEEK_END);
-			uint64_t TableFileSize = _ftelli64(fTable);
-			_fseeki64(fTable, 0, SEEK_SET);
-			mTable.PercentRedundancy = FILE_read64(fTable);
-			mTable.kMessageBytes = FILE_read64(fTable);
-			mTable.kPacketSize = FILE_read64(fTable);
-			mTable.FILESize = FILE_read64(fTable);
-			mtxRepair.lock();
-			mRepairProgress = 0.0;
-			mRepairType = Progression::P_CreateTable;
-			mtxRepair.unlock();
-
-			while (true)
+			while (true)//For each 32MB block
 			{
-				TableNPARblock mBlock;
-				mBlock.BLOCKid = FILE_read64(fTable);
-				mBlock.nbBlockBase = FILE_read64(fTable);
-				mBlock.PacketHash.resize(mBlock.nbBlockBase);
-				for (size_t i = 0; i < mBlock.nbBlockBase; i++)
-					mBlock.PacketHash[i] = FILE_read64(fTable);
-				mBlock.nbBlockToCreate = FILE_read64(fTable);
-				mBlock.HashSource = FILE_read64(fTable);
-				mBlock.HashRecovery = FILE_read64(fTable);
-				mBlock.DataSize = FILE_read64(fTable);
-				mBlock.BaseOffset = _ftelli64(fTable);
-				std::vector<std::byte> vRead(mBlock.DataSize);
-				fread_s(&vRead[0], mBlock.DataSize, sizeof(std::byte), mBlock.DataSize, fTable);
-				uint64_t HashData = XXH3_64bits(&vRead[0], vRead.size());
-				vRead.clear();
-				if (HashData != mBlock.HashRecovery)
-					mBlock.BlocCorrupted = true;
-				mTable.Block.push_back(mBlock);
-				mtxRepair.lock();
-				mRepairProgress = FastPERCd(mBlock.BaseOffset, TableFileSize);
-				mRepairType = Progression::P_CreateTable;
-				mtxRepair.unlock();
-				if (_ftelli64(fTable) == TableFileSize)//End of file
+				BLOCKid++;
+				uint64_t BUFFER = kMessageBytes;
+				if (RemainSize <= kMessageBytes)
+					BUFFER = RemainSize;
+				std::vector<uint8_t> message(BUFFER);
+				fread_s(&message[0], BUFFER, sizeof(std::byte), BUFFER, fSRC);
+				WirehairCodec encoder = wirehair_encoder_create(nullptr, &message[0], BUFFER, kPacketSize);
+				if (!encoder)
+				{
+					mtxCreate.lock();
+					mCreateProgress = 0.0;
+					mCreateType = Progression::P_Error;
+					mtxCreate.unlock();
+					fclose(fDST);
+					fclose(fSRC);
+					return GenerateError::G_CantInitWirehair;
+				}
+				int nbBlockBase = BUFFER / kPacketSize;
+				if (BUFFER % kPacketSize > 0) nbBlockBase++;//Round up block size, if null, at least one block is created with content
+				FILE_write64(fDST, BLOCKid);//BlockNumber
+				FILE_write64(fDST, nbBlockBase);//BaseBlock
+				for (size_t i = 0; i < nbBlockBase; i++)//Create packet hash table
+				{
+					uint64_t szPacket = ((message.size() - (kPacketSize * i)) >= kPacketSize) ? kPacketSize : message.size() - (kPacketSize * i);
+					uint64_t hashPacket = XXH3_64bits(&message[kPacketSize * i], szPacket);
+					FILE_write64(fDST, hashPacket);//BaseBlock
+				}
+				int nbBlockToCreate = (int)((((double)BUFFER / 100.0) * (double)PercentRedundancy) / (double)kPacketSize);
+				FILE_write64(fDST, nbBlockToCreate);//BaseBlock
+				FILE_write64(fDST, XXH3_64bits(&message[0], message.size()));//HASHSOURCE
+				std::vector<uint8_t> Fountain;
+				for (size_t i = 0; i < nbBlockToCreate; i++)//100 equal 10 percent of 32Mb (3,2Mb)
+				{
+					std::vector<uint8_t> block(kPacketSize);	// Encode a packet
+					uint32_t writeLen = 0;
+					WirehairResult encodeResult = wirehair_encode(
+						encoder, // Encoder object
+						nbBlockBase + i, // ID of block to generate (nbblockbase = original file, after is redundant data)
+						&block[0], // Output buffer
+						kPacketSize, // Output buffer size
+						&writeLen); // Returned block length
+					Fountain.resize(Fountain.size() + block.size());
+					memcpy_s(&Fountain[Fountain.size() - block.size()], block.size(), &block[0], block.size());
+				}
+				FILE_write64(fDST, XXH3_64bits(&Fountain[0], Fountain.size()));//HASHSOURCE
+				FILE_write64(fDST, Fountain.size());//HASHSOURCE
+				fwrite(&Fountain[0], sizeof(std::byte), Fountain.size(), fDST);
+				mtxCreate.lock();
+				mCreateProgress = ((double)_ftelli64(fSRC) * 100.0) / (double)FILESize;
+				mtxCreate.unlock();
+				wirehair_free(encoder);
+				RemainSize -= BUFFER;
+				if (RemainSize == 0)//End reached
 					break;
 			}
-			_fseeki64(fTable, 0, SEEK_SET);//Rewinding file index
-			/*	Table is parsed, now going to check source file	*/
+			fclose(fDST);
+			fclose(fSRC);
+			mtxCreate.lock();
+			mCreateProgress = 100.0;
+			mCreateType = Progression::P_Success;
+			mtxCreate.unlock();
+			return GenerateError::G_Success;
+		}
 
-			FILE* fArchive = NULL;
-			_wfopen_s(&fArchive, mFiletoprocess.c_str(), L"rb");
-			if (fArchive != NULL)
+		/// @brief	Return the progression of the generation operation 
+		/// @param	_CreateType	(OUT) Retrieve the operation step
+		/// @return	DOUBLE with the progresion value
+		double GenerateProgress(Progression& _CreateType)
+		{
+			double lProgress = 0.0;
+			mtxCreate.lock();
+			lProgress = mCreateProgress;
+			_CreateType = mCreateType;
+			mtxCreate.unlock();
+			return lProgress;
+		}
+
+		/// @brief	Return the progression of the Control/repairing operation 
+		/// @param	ProgType	(OUT) Retrieve the operation step
+		/// @return	DOUBLE with the progresion value
+		double ControlAndRepairProgress(Progression& ProgType)
+		{
+			double lProgress = 0.0;
+			mtxRepair.lock();
+			lProgress = mRepairProgress;
+			ProgType = mRepairType;
+			mtxRepair.unlock();
+			return lProgress;
+		}
+
+		/// @brief	Structure of the parity block
+		/// @param	PacketHash	Vector with the hash of each packet
+		/// @param	BaseOffset	Offset in parity table
+		/// @param	BLOCKid		Id for this block
+		/// @param	nbBlockBase	How many base block are present
+		/// @param	nbBlockToCreate	How many block to be created based on percentage value
+		/// @param	HashSource	Hash of the source block
+		/// @param	HashRecovery	Hash of the recovery block
+		/// @param	DataSize		Size of the block
+		/// @param	BlockCorrupted	Is the block corrupted
+		/// @param	needRepairing	Block need repairing (used in reparation progress independently of BlockCorrupted)
+		struct TableNPARblock
+		{
+			std::vector<uint64_t>PacketHash;
+			uint64_t BaseOffset;
+			uint64_t BLOCKid;
+			uint64_t nbBlockBase;
+			uint64_t nbBlockToCreate;
+			uint64_t HashSource;
+			uint64_t HashRecovery;
+			uint64_t DataSize;
+			bool BlockCorrupted = false;
+			bool needRepairing = false;
+		};
+
+
+		/// @brief	Structure of the parity table 
+		/// @param	Block			Vector parity block
+		/// @param	PercentRedundancy	Percentage of redundancy
+		/// @param	kMessageBytes		Maximum size for a block
+		/// @param	kPacketSize		Size of the packet
+		/// @param	FILESize			Size of the complete file
+		/// @param	nbBlockBase		How many base block are present
+		struct TableNPAR
+		{
+			uint64_t PercentRedundancy;//Percentage
+			uint64_t kMessageBytes;//Message size (Buffer)
+			uint64_t kPacketSize;//Packet size
+			uint64_t FILESize;//File size
+			std::vector<TableNPARblock> Block;
+		};
+
+		/// @brief	Control and repair if needed the file set with SetFile
+		/// @return	CandRError with the control/reparation status
+		CandRError ControlAndRepair()
+		{
+			/*	First thing first, let's parse the table*/
+			TableNPAR mTable;
+			uint64_t ArcFileSize;
+			FILE* fTable = NULL;
+			mtxRepair.lock();
+			mRepairProgress = 0.0;
+			mRepairType = Progression::P_None;
+			mtxRepair.unlock();
+			_wfopen_s(&fTable, mFilePar.c_str(), L"rb");
+			if (fTable != NULL)
 			{
+				_fseeki64(fTable, 0, SEEK_END);
+				uint64_t TableFileSize = _ftelli64(fTable);
+				_fseeki64(fTable, 0, SEEK_SET);
+				mTable.PercentRedundancy = FILE_read64(fTable);
+				mTable.kMessageBytes = FILE_read64(fTable);
+				mTable.kPacketSize = FILE_read64(fTable);
+				mTable.FILESize = FILE_read64(fTable);
 				mtxRepair.lock();
 				mRepairProgress = 0.0;
-				mRepairType = Progression::P_AnalysingFile;
+				mRepairType = Progression::P_CreateTable;
 				mtxRepair.unlock();
-				_fseeki64(fArchive, 0, SEEK_END);
-				ArcFileSize = _ftelli64(fArchive);
-				_fseeki64(fArchive, 0, SEEK_SET);
-				if (ArcFileSize != mTable.FILESize)
+
+				while (true)
 				{
+					TableNPARblock mBlock;
+					mBlock.BLOCKid = FILE_read64(fTable);
+					mBlock.nbBlockBase = FILE_read64(fTable);
+					mBlock.PacketHash.resize(mBlock.nbBlockBase);
+					for (size_t i = 0; i < mBlock.nbBlockBase; i++)
+						mBlock.PacketHash[i] = FILE_read64(fTable);
+					mBlock.nbBlockToCreate = FILE_read64(fTable);
+					mBlock.HashSource = FILE_read64(fTable);
+					mBlock.HashRecovery = FILE_read64(fTable);
+					mBlock.DataSize = FILE_read64(fTable);
+					mBlock.BaseOffset = _ftelli64(fTable);
+					std::vector<std::byte> vRead(mBlock.DataSize);
+					fread_s(&vRead[0], mBlock.DataSize, sizeof(std::byte), mBlock.DataSize, fTable);
+					uint64_t HashData = XXH3_64bits(&vRead[0], vRead.size());
+					vRead.clear();
+					if (HashData != mBlock.HashRecovery)
+						mBlock.BlockCorrupted = true;
+					mTable.Block.push_back(mBlock);
+					mtxRepair.lock();
+					mRepairProgress = FastPERCd(mBlock.BaseOffset, TableFileSize);
+					mRepairType = Progression::P_CreateTable;
+					mtxRepair.unlock();
+					if (_ftelli64(fTable) == TableFileSize)//End of file
+						break;
+				}
+				_fseeki64(fTable, 0, SEEK_SET);//Rewinding file index
+				/*	Table is parsed, now going to check source file	*/
+
+				FILE* fArchive = NULL;
+				_wfopen_s(&fArchive, mFiletoprocess.c_str(), L"rb");
+				if (fArchive != NULL)
+				{
+					mtxRepair.lock();
+					mRepairProgress = 0.0;
+					mRepairType = Progression::P_AnalysingFile;
+					mtxRepair.unlock();
+					_fseeki64(fArchive, 0, SEEK_END);
+					ArcFileSize = _ftelli64(fArchive);
+					_fseeki64(fArchive, 0, SEEK_SET);
+					if (ArcFileSize != mTable.FILESize)
+					{
+						mtxRepair.lock();
+						mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
+						mtxRepair.unlock();
+						return CandRError::C_ArchiveIsNotSameSize;
+					}
+					for (size_t i = 0; i < mTable.Block.size(); i++)
+					{
+						_fseeki64(fArchive, mTable.kMessageBytes * i, SEEK_SET);
+						std::vector<std::byte> vRead((i == (mTable.Block.size() - 1) ?/*LastPart*/ArcFileSize - _ftelli64(fArchive) : mTable.kMessageBytes));
+						fread_s(&vRead[0], vRead.size(), sizeof(std::byte), vRead.size(), fArchive);
+						uint64_t HashData = XXH3_64bits(&vRead[0], vRead.size());
+						vRead.clear();
+						if (HashData != mTable.Block[i].HashSource)
+							mTable.Block[i].needRepairing = true;
+						mtxRepair.lock();
+						mRepairProgress = FastPERCd(i, mTable.Block.size());
+						mRepairType = Progression::P_AnalysingFile;
+						mtxRepair.unlock();
+					}
+				}
+				else
+				{
+					fclose(fTable);
 					mtxRepair.lock();
 					mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
 					mtxRepair.unlock();
-					return CandRError::C_ArchiveIsNotSameSize;
+					return CandRError::C_CantOpenArchiveFile;
 				}
+				bool _NeedRecovery = false;
 				for (size_t i = 0; i < mTable.Block.size(); i++)
+					if (mTable.Block[i].needRepairing) _NeedRecovery = true;
+				if (_NeedRecovery == false)
 				{
-					_fseeki64(fArchive, mTable.kMessageBytes * i, SEEK_SET);
-					std::vector<std::byte> vRead((i == (mTable.Block.size() - 1) ?/*LastPart*/ArcFileSize - _ftelli64(fArchive) : mTable.kMessageBytes));
-					fread_s(&vRead[0], vRead.size(), sizeof(std::byte), vRead.size(), fArchive);
-					uint64_t HashData = XXH3_64bits(&vRead[0], vRead.size());
-					vRead.clear();
-					if (HashData != mTable.Block[i].HashSource)
-						mTable.Block[i].needRepairing = true;
+					fclose(fArchive);
+					fclose(fTable);
 					mtxRepair.lock();
-					mRepairProgress = FastPERCd(i, mTable.Block.size());
-					mRepairType = Progression::P_AnalysingFile;
+					mRepairProgress = 100.0;	mRepairType = Progression::P_Success;
 					mtxRepair.unlock();
+					return CandRError::C_NeedNoRepair;
 				}
-			}
-			else
-			{
-				fclose(fTable);
+				/*	We are going to repair corrupted block	*/
+				_fseeki64(fArchive, 0, SEEK_SET);//Resetting file pointer to origin
+				_fseeki64(fTable, 0, SEEK_SET);
+				FILE* fREPAIRED = NULL;
+				_wfopen_s(&fREPAIRED, std::wstring(mFiletoprocess + L".repaired").c_str(), L"wb");
+				bool FailedToRecover = false;
 				mtxRepair.lock();
-				mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
+				mRepairProgress = 0.0;
+				mRepairType = Progression::P_Repairing;
 				mtxRepair.unlock();
-				return CandRError::C_CantOpenArchiveFile;
-			}
-			bool _NeedRecovery = false;
-			for (size_t i = 0; i < mTable.Block.size(); i++)
-				if (mTable.Block[i].needRepairing) _NeedRecovery = true;
-			if (_NeedRecovery == false)
-			{
-				fclose(fArchive);
-				fclose(fTable);
-				mtxRepair.lock();
-				mRepairProgress = 100.0;	mRepairType = Progression::P_Success;
-				mtxRepair.unlock();
-				return CandRError::C_NeedNoRepair;
-			}
-			/*	We are going to repair corrupted block	*/
-			_fseeki64(fArchive, 0, SEEK_SET);//Resetting file pointer to origin
-			_fseeki64(fTable, 0, SEEK_SET);
-			FILE* fREPAIRED = NULL;
-			_wfopen_s(&fREPAIRED, std::wstring(mFiletoprocess + L".repaired").c_str(), L"wb");
-			bool FailedToRecover = false;
-			mtxRepair.lock();
-			mRepairProgress = 0.0;
-			mRepairType = Progression::P_Repairing;
-			mtxRepair.unlock();
 
-			if (fREPAIRED != NULL)
-			{
-				for (size_t i = 0; i < mTable.Block.size(); i++)
+				if (fREPAIRED != NULL)
 				{
-					mtxRepair.lock();
-					mRepairProgress = FastPERCd(i, mTable.Block.size());
-					mRepairType = Progression::P_Repairing;
-					mtxRepair.unlock();
-
-					uint64_t BUFFER = ((mTable.FILESize - _ftelli64(fArchive)) >= kMessageBytes) ? kMessageBytes : mTable.FILESize - _ftelli64(fArchive);
-					std::vector<std::byte> vReadFromArc(BUFFER);
-					fread_s(&vReadFromArc[0], vReadFromArc.size(), sizeof(std::byte), vReadFromArc.size(), fArchive);
-					if (!mTable.Block[i].needRepairing)
-					{//Need no repairing, Copying whole chunk
-						OutputDebugString(std::wstring(L"Block " + std::to_wstring(i) + L" => Sane, copying block...\n").c_str());
-						fwrite(&vReadFromArc[0], sizeof(std::byte), vReadFromArc.size(), fREPAIRED);
-					}
-					else
+					for (size_t i = 0; i < mTable.Block.size(); i++)
 					{
-						OutputDebugString(std::wstring(L"Block " + std::to_wstring(i) + L" => Corrupted, repairing now...\n").c_str());
-						//Creating table for this block
-						std::vector<std::vector<std::uint8_t>> RepairTable(mTable.Block[i].nbBlockToCreate);
-						_fseeki64(fTable, mTable.Block[i].BaseOffset, SEEK_SET);//Resetting file pointer to origin
-						for (size_t j = 0; j < mTable.Block[i].nbBlockToCreate; j++)
-						{
-							RepairTable[j].resize(kPacketSize);
-							fread_s(&RepairTable[j][0], RepairTable[j].size(), sizeof(std::byte), RepairTable[j].size(), fTable);
-						}
-						OutputDebugString(std::wstring(L"Block " + std::to_wstring(i) + L" => Table extracted\n").c_str());
-						//We feed Original Block to Decoder
-						WirehairCodec encoder = wirehair_encoder_create(nullptr, &vReadFromArc[0], vReadFromArc.size(), kPacketSize);
-						WirehairCodec decoder = wirehair_decoder_create(nullptr, vReadFromArc.size(), kPacketSize);
-						WirehairResult encodeResult;
-						WirehairResult decodeResult;
-						for (size_t j = 0; j < mTable.Block[i].nbBlockBase; j++)
-						{
-							//Hashing
-							uint64_t szPacket = ((vReadFromArc.size() - (kPacketSize * j)) >= kPacketSize) ? kPacketSize : vReadFromArc.size() - (kPacketSize * j);
-							uint64_t hashPacket = XXH3_64bits(&vReadFromArc[kPacketSize * j], szPacket);
-							if (hashPacket == mTable.Block[i].PacketHash[j])
-							{//Same hash, feeding
-								std::vector<uint8_t> block(kPacketSize);
-								uint32_t writeLen = 0;
-								encodeResult = wirehair_encode(
-									encoder, // Encoder object
-									j, // ID of block to generate
-									&block[0], // Output buffer
-									kPacketSize, // Output buffer size
-									&writeLen); // Returned block length
-								printf("");
-								decodeResult = wirehair_decode(
-									decoder, // Decoder object
-									j, // ID of block that was encoded
-									&block[0], // Input block
-									writeLen); // Block length
-							}
-						}
-						for (size_t j = 0; j < RepairTable.size(); j++)
-						{
-							decodeResult = wirehair_decode(
-								decoder, // Decoder object
-								mTable.Block[i].nbBlockBase + j, // ID of block that was encoded
-								&RepairTable[j][0], // Input block
-								RepairTable[j].size()); // Block length
-							if (decodeResult == Wirehair_Success)// Decoder has enough data to recover now
-								break;
-							if (decodeResult != Wirehair_NeedMore)//!!! wirehair_decode failed:
-							{//Writing unrepaired block, sorry...
-								OutputDebugString(std::wstring(L"Block " + std::to_wstring(i) + L" => Unresolved decode error, this block can't be repaired\n").c_str());
-								fwrite(&vReadFromArc[0], sizeof(std::byte), vReadFromArc.size(), fREPAIRED);
-								FailedToRecover = true;
-							}
-						}
-						if (decodeResult == Wirehair_NeedMore)
-						{
-							OutputDebugString(std::wstring(L"Block " + std::to_wstring(i) + L" => Not enough parts, this block can't be repaired\n").c_str());
+						mtxRepair.lock();
+						mRepairProgress = FastPERCd(i, mTable.Block.size());
+						mRepairType = Progression::P_Repairing;
+						mtxRepair.unlock();
+
+						uint64_t BUFFER = ((mTable.FILESize - _ftelli64(fArchive)) >= kMessageBytes) ? kMessageBytes : mTable.FILESize - _ftelli64(fArchive);
+						std::vector<std::byte> vReadFromArc(BUFFER);
+						fread_s(&vReadFromArc[0], vReadFromArc.size(), sizeof(std::byte), vReadFromArc.size(), fArchive);
+						if (!mTable.Block[i].needRepairing)
+						{//Need no repairing, Copying whole chunk
 							fwrite(&vReadFromArc[0], sizeof(std::byte), vReadFromArc.size(), fREPAIRED);
-							FailedToRecover = true;
 						}
 						else
 						{
-							std::vector<uint8_t> decoded(vReadFromArc.size());
-							decodeResult = wirehair_recover(
-								decoder,
-								&decoded[0],
-								vReadFromArc.size());
-							if (decodeResult != Wirehair_Success)
-							{//Writing unrepaired block, sorry...
-								OutputDebugString(std::wstring(L"Block " + std::to_wstring(i) + L" => Something wen't wrong with the decoder, this block can't be repaired\n").c_str());
+							//Creating table for this block
+							std::vector<std::vector<std::uint8_t>> RepairTable(mTable.Block[i].nbBlockToCreate);
+							_fseeki64(fTable, mTable.Block[i].BaseOffset, SEEK_SET);//Resetting file pointer to origin
+							for (size_t j = 0; j < mTable.Block[i].nbBlockToCreate; j++)
+							{
+								RepairTable[j].resize(kPacketSize);
+								fread_s(&RepairTable[j][0], RepairTable[j].size(), sizeof(std::byte), RepairTable[j].size(), fTable);
+							}
+							//We feed Original Block to Decoder
+							WirehairCodec encoder = wirehair_encoder_create(nullptr, &vReadFromArc[0], vReadFromArc.size(), kPacketSize);
+							WirehairCodec decoder = wirehair_decoder_create(nullptr, vReadFromArc.size(), kPacketSize);
+							WirehairResult encodeResult;
+							WirehairResult decodeResult;
+							for (size_t j = 0; j < mTable.Block[i].nbBlockBase; j++)
+							{
+								//Hashing
+								uint64_t szPacket = ((vReadFromArc.size() - (kPacketSize * j)) >= kPacketSize) ? kPacketSize : vReadFromArc.size() - (kPacketSize * j);
+								uint64_t hashPacket = XXH3_64bits(&vReadFromArc[kPacketSize * j], szPacket);
+								if (hashPacket == mTable.Block[i].PacketHash[j])
+								{//Same hash, feeding
+									std::vector<uint8_t> block(kPacketSize);
+									uint32_t writeLen = 0;
+									encodeResult = wirehair_encode(
+										encoder, // Encoder object
+										j, // ID of block to generate
+										&block[0], // Output buffer
+										kPacketSize, // Output buffer size
+										&writeLen); // Returned block length
+									printf("");
+									decodeResult = wirehair_decode(
+										decoder, // Decoder object
+										j, // ID of block that was encoded
+										&block[0], // Input block
+										writeLen); // Block length
+								}
+							}
+							for (size_t j = 0; j < RepairTable.size(); j++)
+							{
+								decodeResult = wirehair_decode(
+									decoder, // Decoder object
+									mTable.Block[i].nbBlockBase + j, // ID of block that was encoded
+									&RepairTable[j][0], // Input block
+									RepairTable[j].size()); // Block length
+								if (decodeResult == Wirehair_Success)// Decoder has enough data to recover now
+									break;
+								if (decodeResult != Wirehair_NeedMore)//!!! wirehair_decode failed:
+								{//Writing unrepaired block, sorry...
+									fwrite(&vReadFromArc[0], sizeof(std::byte), vReadFromArc.size(), fREPAIRED);
+									FailedToRecover = true;
+								}
+							}
+							if (decodeResult == Wirehair_NeedMore)
+							{
 								fwrite(&vReadFromArc[0], sizeof(std::byte), vReadFromArc.size(), fREPAIRED);
 								FailedToRecover = true;
 							}
 							else
 							{
-								OutputDebugString(std::wstring(L"Block " + std::to_wstring(i) + L" => Repairing done, writing...\n").c_str());
-								fwrite(&decoded[0], sizeof(std::byte), decoded.size(), fREPAIRED);
+								std::vector<uint8_t> decoded(vReadFromArc.size());
+								decodeResult = wirehair_recover(
+									decoder,
+									&decoded[0],
+									vReadFromArc.size());
+								if (decodeResult != Wirehair_Success)
+								{//Writing unrepaired block, sorry...
+									fwrite(&vReadFromArc[0], sizeof(std::byte), vReadFromArc.size(), fREPAIRED);
+									FailedToRecover = true;
+								}
+								else
+								{
+									fwrite(&decoded[0], sizeof(std::byte), decoded.size(), fREPAIRED);
+								}
+								decoded.clear();
 							}
-							decoded.clear();
-						}
-						for (size_t j = 0; j < RepairTable.size(); j++)
-							RepairTable[j].clear();
-						RepairTable.clear();
-						wirehair_free(decoder);
-						wirehair_free(encoder);
+							for (size_t j = 0; j < RepairTable.size(); j++)
+								RepairTable[j].clear();
+							RepairTable.clear();
+							wirehair_free(decoder);
+							wirehair_free(encoder);
 
+						}
+						vReadFromArc.clear();
 					}
-					vReadFromArc.clear();
+					fclose(fREPAIRED);
 				}
-				fclose(fREPAIRED);
-			}
-			else
-			{
+				else
+				{
+					fclose(fArchive);
+					fclose(fTable);
+					mtxRepair.lock();
+					mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
+					mtxRepair.unlock();
+					return CandRError::C_CantCreateRepairFile;
+				}
 				fclose(fArchive);
 				fclose(fTable);
-				mtxRepair.lock();
-				mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
-				mtxRepair.unlock();
-				return CandRError::C_CantCreateRepairFile;
-			}
-			fclose(fArchive);
-			fclose(fTable);
-			uint64_t szRepaired = 0;
-			_wfopen_s(&fREPAIRED, std::wstring(mFiletoprocess + L".repaired").c_str(), L"rb");
-			if (fREPAIRED != NULL)
-			{
-				_fseeki64(fREPAIRED, 0, SEEK_END);
-				szRepaired = _ftelli64(fREPAIRED);
-				fclose(fREPAIRED);
-			}
-
-			if (szRepaired == ArcFileSize)
-			{//Wether file is fully recovered or not, we keep it because size is the same, even if damaged, maybe you can recover more files this way...
-
-				OutputDebugString(std::wstring(L"Removing damaged file : ").c_str());
-				int result = _wremove(mFiletoprocess.c_str());
-				if (result == 0)
-					OutputDebugString(std::wstring(L"Done\n").c_str());
-				else
-					OutputDebugString(std::wstring(L"Error\n").c_str());
-				if (result == 0)
+				uint64_t szRepaired = 0;
+				_wfopen_s(&fREPAIRED, std::wstring(mFiletoprocess + L".repaired").c_str(), L"rb");
+				if (fREPAIRED != NULL)
 				{
-					OutputDebugString(std::wstring(L"Replacing by repaired one : ").c_str());
-					result = _wrename(std::wstring(mFiletoprocess + L".repaired").c_str(), mFiletoprocess.c_str());
+					_fseeki64(fREPAIRED, 0, SEEK_END);
+					szRepaired = _ftelli64(fREPAIRED);
+					fclose(fREPAIRED);
+				}
+
+				if (szRepaired == ArcFileSize)
+				{//Wether file is fully recovered or not, we keep it because size is the same, even if damaged, maybe you can recover more files this way...
+
+					int result = _wremove(mFiletoprocess.c_str());	// 0 = Done	else Error
 					if (result == 0)
-						OutputDebugString(std::wstring(L"Done\n").c_str());
-					else
-						OutputDebugString(std::wstring(L"Error\n").c_str());
+					{
+						result = _wrename(std::wstring(mFiletoprocess + L".repaired").c_str(), mFiletoprocess.c_str());	// 0 = Done	else Error
+					}
+				}
+				else
+				{
+					int result = _wremove(std::wstring(mFiletoprocess + L".repaired").c_str());	// 0 = Done	else Error
+				}
+				if (FailedToRecover)
+				{
+					mtxRepair.lock();
+					mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
+					mtxRepair.unlock();
+					return CandRError::C_RepairFailedNotEnoughBlockToRepair;
+				}
+				else
+				{
+					mtxRepair.lock();
+					mRepairProgress = 100.0;	mRepairType = Progression::P_Success;
+					mtxRepair.unlock();
+					return CandRError::C_RepairSuccess;
 				}
 			}
 			else
 			{
-				OutputDebugString(std::wstring(L"Recovery unsuccessful, removing unnecessary file : ").c_str());
-				int result = _wremove(std::wstring(mFiletoprocess + L".repaired").c_str());
-				if (result == 0)
-					OutputDebugString(std::wstring(L"Done\n").c_str());
-				else
-					OutputDebugString(std::wstring(L"Error\n").c_str());
-			}
-			if (FailedToRecover)
-			{
 				mtxRepair.lock();
 				mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
 				mtxRepair.unlock();
-				return CandRError::C_RepairFailedNotEnoughBlockToRepair;
+				return CandRError::C_CantOpenNPARFile;
 			}
-			else
-			{
-				mtxRepair.lock();
-				mRepairProgress = 100.0;	mRepairType = Progression::P_Success;
-				mtxRepair.unlock();
-				return CandRError::C_RepairSuccess;
-			}
-		}
-		else
-		{
 			mtxRepair.lock();
 			mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
 			mtxRepair.unlock();
-			return CandRError::C_CantOpenNPARFile;
+			return CandRError::C_UnknownError;
 		}
-		mtxRepair.lock();
-		mRepairProgress = 0.0;	mRepairType = Progression::P_Error;
-		mtxRepair.unlock();
-		return CandRError::C_UnknownError;
-	}
-	void CorruptFileVoluntary(std::wstring OrigFile, std::wstring MessedFile, double CorruptionPercentage, bool CorruptOneBlockOfTwo = true)
-	{
-		//Personnal purpose, no error checking
-		FILE* fSRC = NULL;
-		FILE* fMES = NULL;
-		_wfopen_s(&fSRC, OrigFile.c_str(), L"rb");
-		_wfopen_s(&fMES, MessedFile.c_str(), L"wb");
-		uint64_t FileSIZE = std::filesystem::file_size(OrigFile);
-		bool CorruptBOOL = true;
-		while (true)
+
+#ifdef EXPERIMENT_WIREHAIR
+		/// @brief	Structure of the parity table 
+		/// @param	OrigFile			File to corrupt
+		/// @param	MessedFile			File corrupted (Never overwrite original one))
+		/// @param	CorruptionPercentage			Percentage of corruption
+		/// @param	CorruptOneBlockOfTwo			Corrupt each block or even one only (With this, there good block and bad block)
+		void CorruptFileVoluntary(std::wstring OrigFile, std::wstring MessedFile, double CorruptionPercentage, bool CorruptOneBlockOfTwo = true)
 		{
-			uint64_t BUFFER = ((FileSIZE - _ftelli64(fSRC)) >= kMessageBytes) ? kMessageBytes : FileSIZE - _ftelli64(fSRC);
-			std::vector<std::byte> vRead(BUFFER);
-			fread_s(&vRead[0], vRead.size(), sizeof(std::byte), vRead.size(), fSRC);
-			uint64_t CorruptRange = (CorruptionPercentage * ((double)((double)BUFFER / (double)kPacketSize) / 100.0)) * kPacketSize;
-			if (CorruptOneBlockOfTwo)
+			//Personnal purpose, no error checking
+			FILE* fSRC = NULL;
+			FILE* fMES = NULL;
+			_wfopen_s(&fSRC, OrigFile.c_str(), L"rb");
+			_wfopen_s(&fMES, MessedFile.c_str(), L"wb");
+			uint64_t FileSIZE = std::filesystem::file_size(OrigFile);
+			bool CorruptBOOL = true;
+			while (true)
 			{
-				if (CorruptBOOL)
+				uint64_t BUFFER = ((FileSIZE - _ftelli64(fSRC)) >= kMessageBytes) ? kMessageBytes : FileSIZE - _ftelli64(fSRC);
+				std::vector<std::byte> vRead(BUFFER);
+				fread_s(&vRead[0], vRead.size(), sizeof(std::byte), vRead.size(), fSRC);
+				uint64_t CorruptRange = (CorruptionPercentage * ((double)((double)BUFFER / (double)kPacketSize) / 100.0)) * kPacketSize;
+				if (CorruptOneBlockOfTwo)
+				{
+					if (CorruptBOOL)
+						memset(&vRead[0], '\0', CorruptRange);
+					CorruptBOOL = !CorruptBOOL;
+				}
+				else
 					memset(&vRead[0], '\0', CorruptRange);
-				CorruptBOOL = !CorruptBOOL;
+				fwrite(&vRead[0], sizeof(std::byte), vRead.size(), fMES);
+				if (_ftelli64(fSRC) == std::filesystem::file_size(OrigFile))
+					break;
 			}
-			else
-				memset(&vRead[0], '\0', CorruptRange);
-			fwrite(&vRead[0], sizeof(std::byte), vRead.size(), fMES);
-			if (_ftelli64(fSRC) == std::filesystem::file_size(OrigFile))
-				break;
+			fclose(fSRC);
+			fclose(fMES);
 		}
-		fclose(fSRC);
-		fclose(fMES);
-	}
+#endif
+	private:
+		std::mutex mtxCreate;								// Interthread lock for progression information
+		double mCreateProgress = 0.0;						// Creation progression
+		Progression mCreateType = Progression::P_None;		//Progression detailed step
 
-private:
-	std::mutex mtxCreate;
-	double mCreateProgress = 0.0;
-	Progression mCreateType = Progression::P_None;
+		std::mutex mtxRepair;								// Interthread lock for progression information
+		double mRepairProgress = 0.0;						//Control/Reparaion progress
+		Progression mRepairType = Progression::P_None;		//Progression detailed step
 
-	std::mutex mtxRepair;
-	double mRepairProgress = 0.0;
-	Progression mRepairType = Progression::P_None;
+		std::wstring mFiletoprocess = L"";					//File to process
+		std::wstring mFilePar = L"";						//NParity file to create/use
+		static const int kMessageBytes = 32 * 1024 * 1024;	//Size of a block
+		static const int kPacketSize = 32 * 1024;			//Size of a packet within a block
 
-	std::wstring mFiletoprocess = L"";
-	std::wstring mFilePar = L"";
-	static const int kMessageBytes = 32 * 1024 * 1024;
-	static const int kPacketSize = 32 * 1024;
+		/// @brief      Read uint64_t (8 byte) data from a memory pointer with a minimum size of 8 byte from a FILE*.
+		uint64_t FILE_read64(FILE* _File)
+		{
+			std::vector<uint8_t> vec_uint64;
+			vec_uint64.resize(sizeof(uint64_t));
+			fread_s(&vec_uint64[0], sizeof(uint64_t), sizeof(uint8_t), sizeof(uint64_t), _File);
+			uint64_t val; memcpy_s(&val, sizeof(val), &vec_uint64[0], sizeof(val));
+			vec_uint64.clear();
+			return val;
+		}
+		/// @brief      Write uint64_t (8 byte) data from a memory pointer with a minimum size of 8 byte to a FILE*.
+		void FILE_write64(FILE* _File, uint64_t val)
+		{
+			std::vector<uint8_t> vec_uint64;
+			vec_uint64.resize(sizeof(uint64_t));
+			memcpy_s(&vec_uint64[0], sizeof(val), &val, sizeof(val));
+			fwrite(&vec_uint64[0], sizeof(uint8_t), sizeof(uint64_t), _File);
+			vec_uint64.clear();
+		}
+	};
 
-	/// @brief      Read uint64_t (8 byte) data from a memory pointer with a minimum size of 8 byte from a FILE*.
-	uint64_t FILE_read64(FILE* Fichier)
+	/// @brief	Retrieve the percentage of Error correction block within a NPAR file
+	/// @param	_File	NPAR file to retrieve percentage of Error correction block
+	/// @return	UINT64_T with the percentage (Retrieve 0 if file doesn't exist or is unreadable)
+	uint64_t WIREHAIR_RetrievePercentFromFile(std::wstring _File)
 	{
-		std::vector<uint8_t> vec_uint64;
-		vec_uint64.resize(sizeof(uint64_t));
-		fread_s(&vec_uint64[0], sizeof(uint64_t), sizeof(uint8_t), sizeof(uint64_t), Fichier);
-		uint64_t val; memcpy_s(&val, sizeof(val), &vec_uint64[0], sizeof(val));
-		vec_uint64.clear();
-		return val;
+		FILE* fSRC = NULL;
+		_wfopen_s(&fSRC, _File.c_str(), L"rb");
+		if (fSRC == NULL)
+			return 0;
+		else
+		{
+			_fseeki64(fSRC, 0, SEEK_END);
+			if (_ftelli64(fSRC) < 4)
+				return 0;
+			_fseeki64(fSRC, 0, SEEK_SET);
+			std::vector<uint8_t> vec_uint64;
+			vec_uint64.resize(sizeof(uint64_t));
+			fread_s(&vec_uint64[0], sizeof(uint64_t), sizeof(uint8_t), sizeof(uint64_t), fSRC);
+			uint64_t val; memcpy_s(&val, sizeof(val), &vec_uint64[0], sizeof(val));
+			vec_uint64.clear();
+			fclose(fSRC);
+			return val;
+		}
+		return 0;
 	}
-	/// @brief      Write uint64_t (8 byte) data from a memory pointer with a minimum size of 8 byte to a FILE*.
-	void FILE_write64(FILE* Fichier, uint64_t val)
-	{
-		std::vector<uint8_t> vec_uint64;
-		vec_uint64.resize(sizeof(uint64_t));
-		memcpy_s(&vec_uint64[0], sizeof(val), &val, sizeof(val));
-		fwrite(&vec_uint64[0], sizeof(uint8_t), sizeof(uint64_t), Fichier);
-		vec_uint64.clear();
-	}
-};
+}
 
-/// <summary>NZAʀᴄʜɪᴠᴇ namespace declaration</summary>
+/*		 __  _____   _            _     _
+	  /\ \ \/ _  /  /_\  _ __ ___| |__ (_)_   _____    _ __   __ _ _ __ ___   ___  ___ _ __   __ _  ___ ___
+	 /  \/ /\// /  //_\\| '__/ __| '_ \| \ \ / / _ \  | '_ \ / _` | '_ ` _ \ / _ \/ __| '_ \ / _` |/ __/ _ \
+	/ /\  /  / //\/  _  \ | | (__| | | | |\ V /  __/  | | | | (_| | | | | | |  __/\__ \ |_) | (_| | (_|  __/
+	\_\ \/  /____/\_/ \_/_|  \___|_| |_|_| \_/ \___|  |_| |_|\__,_|_| |_| |_|\___||___/ .__/ \__,_|\___\___|
+																					  |_|
+*/
+/// @brief	NZAʀᴄʜɪᴠᴇ namespace containing Archive class
 namespace NZArchive
 {
-	/*
-	* ▀▄▀▄▀▄ NZAʀᴄʜɪᴠᴇ ▄▀▄▀▄▀
-	*
-	* NZAʀᴄʜɪᴠᴇ is a fast and encrypted archive format using ZStandard for fast compression
-	* and blazing fast decompression no matter the compression level.
-	* Encryption is using Chacha method with a 256 bits key and twenty rounds of chacha.
-	* Written in C++17 and oriented to 64 bits application.
-	* Function name are inspired by LibArchive standard.
-	* GUI is being written at the moment to extract/create NZArchive
-	*
-	* ▄ тσ∂σ ▄
-	*	- Maybe some optimizations
-	*
-	* ▄ ιѕѕυєѕ ▄
-	*	- None
-	*
-	* ▄ нιѕтσяу ▄
-	* νєяѕισи 1.0.0 :	First milestone, I think's it's stable enough for daily usage
-	* νєяѕισи 0.9.1 :	Change header method, now it's a separate chunk of byte, compressed and crypted at the end of the NZArchive
-	* νєяѕισи 0.9.0 :	Added AES256 support
-	* νєяѕισи 0.8.9 :	Added function commentary
-	* νєяѕισи 0.8.2 :	Total rewriting of function name for easier comprehension and usage
-	* νєяѕισи 0.8.1 :	Implementation of function to get file list of archive in a readable way
-	* νєяѕισи 0.8.0 :	Implementation of Unicode file support with std::wstring to
-	*					std::byte (unsigned char) conversion to save and read unicode encoded namefrom/to file
-	* νєяѕισи 0.7.5 :	Usage of mutex lock for interthread call. eg. progress report from a detached thread
-	* νєяѕισи 0.7.0 :	Implementation of ZStandard 1.5.0 for speed and reliable compression
-	*					(Standard compression level [1-19] (default: 3) / High compression levels [20-22]
-	*					#include "zstd.h"			https://github.com/facebook/zstd	BSD License
-	* νєяѕισи 0.5.0 :	Implementation of XX3Hash 0.8.0 to ensure data integrity
-	*					#include "xxh3.h"			https://github.com/Cyan4973/xxHash	BSD 2-Clause License
-	* νєяѕισи 0.2.0 :	Implementation of ChaCha20 256bits 20 round for encryption
-	*					#include "chacha.hpp"		https://github.com/cooky451/chacha	MIT Licence
-	* νєяѕισи 0.1.0 :	Creation of the archive format basis, only copy fonction for the moment
-	*/
+	/// @brief	NZArchive, Major version int
+	constexpr int NZArchiveMajor = NZARCHIVE_MAJOR;
+	/// @brief	NZArchive, Minor version int
+	constexpr int NZArchiveMinus = NZARCHIVE_MINOR;
+	/// @brief	NZArchive, Revision version int
+	constexpr int NZArchiveRevision = NZARCHIVE_REVISION;
 
-
-	/// <summary>NZAʀᴄʜɪᴠᴇ, Magic byte definition</summary>
+	/// @brief	NZAʀᴄʜɪᴠᴇ, Magic byte definition
 	std::uint8_t magicByte[8] = { 0x4e, 0x5a, 0x41, 0x1f, 0xd5, 0x8a, 0x71, 0xbe };
-	/// <summary>ADDFILE is success.</summary>
-	constexpr int ADDFILE_SUCCESS = 0;
-	/// <summary>ADDFILE error, FILE* Pointer is null.</summary>
-	constexpr int ADDFILE_FILEPOINTER_NULL = -1;
-	/// <summary>ADDFILE error, source file is empty.</summary>
-	constexpr int ADDFILE_FILENOTEXIST = -2;
-	/// <summary>ADDFILE error, source file is locked for reading.</summary>
-	constexpr int ADDFILE_CANTOPENFILE = -4;
-	/// <summary>ADDFILE error, unknown error.</summary>
-	constexpr int ADDFILE_FATALERROR = -5;
-	/// <summary>NZArchive, Major version int</summary>
-	constexpr int NZArchiveMajor = 1;
-	/// <summary>NZArchive, Minor version int</summary>
-	constexpr int NZArchiveMinus = 0;
-	/// <summary>NZArchive, Revision version int</summary>
-	constexpr int NZArchiveRevision = 7;
 
+	/// @brief	Error status for file adding operation
+	enum class ADDFILE_ERROR : int8_t {
+		ADDFILE_SUCCESS = 0, ADDFILE_FILEPOINTER_NULL = -1, ADDFILE_FILENOTEXIST = -2, ADDFILE_CANTOPENFILE = -4, ADDFILE_FATALERROR = -5
+	};
 
+	/// @brief	Error status for file extraction operation
 	enum class OP_EXTRACT : uint8_t {
 		OP_EXTRACT_SUCCESS = 1, OP_EXTRACT_CANTCREATEOUTFILE = 0, OP_EXTRACT_CANTOPENARCHIVE = 2, OP_EXTRACT_CANTOPENPASSWORDERROR = 3, OP_EXTRACT_HASHERRORS = 4
 	};
-
 
 	/// @brief      Enumeration of encryption method.
 	enum class EncryptionMethod : uint8_t {
 		encNone = 1, encChaCha20 = 2, encAES256 = 4
 	};
+
+	/// @brief      Error status for ZSTD_stream compression / decompression
 	enum class ZSTD_stream_error : uint8_t {
 		ZS_NoError, ZS_CCTXError, ZS_SourceEmpty, ZS_ErrorConsumingInput, ZS_DCTXError
 	};
 
+	/// @brief      Archive class declaration
 	class Archive
 	{
 	public:
-		/// @brief      Sturcture representing operation progression.
-		/// @return     Opeation progress:
-		///             - Current position
-		///             - Total position
-		///             - Percentage of operation
+		/// @brief	Structure representing operation progression
+		/// @param	Progress		Opeation progress
+		/// @param	Current		Current position
+		/// @param	Total		Total position
+		/// @param	CurrentFile	Current file treated		
 		struct _ProgressReporting
 		{
 			double Progress = 0.0;
@@ -695,8 +765,7 @@ namespace NZArchive
 		};
 
 
-		/// @brief      Compress and encrypt a chunk of byte.
-		/// @details    Compress and encrypt using Chacha20 encryption a vector of std::byte into a second vector of std::byte with a given level of compression.
+		/// @brief      Compress and encrypt using Chacha20 encryption a vector of std::byte into a second vector of std::byte with a given level of compression.
 		///				Retrieve additional information such as hash of input and output vector of std::byte
 		///				If _VectorOut is null sized after compression, it means operation failed.
 		/// @param  _VectorIn		Vector of std::byte to be compressed
@@ -752,9 +821,8 @@ namespace NZArchive
 			//vIv.clear();
 		}
 
-		/// @brief      Decrypt and Uncompress a chunk of byte.
-		/// @details    Decrypt and Uncompress using Chacha20 encryption a vector of std::byte into a second vector of std::byte.
-		///				Retrieve additional information such as hash of input and output vector of std::byte
+		/// @brief  Decrypt and Uncompress using Chacha20 encryption a vector of std::byte into a second vector of std::byte.
+		///			Retrieve additional information such as hash of input and output vector of std::byte
 		/// @param  _VectorIn		Vector of std::byte with compressed and encrypted data
 		/// @param  _VectorOut		Vector of std::byte, MUST BE SIZED TO UNCOMPRESSED DATA LENGTH, who will be filled with uncompressed data
 		/// @param  _HashIn			Computed XXHASH64 of uncompressed vector
@@ -807,7 +875,6 @@ namespace NZArchive
 		}
 
 		/// @brief      Compress a vector with ZSTD in stream mode (Meaning multithreading mode enabled).
-		/// @details    Compress a vector with ZSTD in stream mode (Meaning multithreading mode enabled).
 		/// @param  _VecIn			Vector of std::byte with original data
 		/// @param  _VecOut			Vector of std::byte with compressed data (vector will be cleared at the beginning of the process)
 		/// @param  CompressionLevel	Compression level (From 1 to 22)
@@ -867,7 +934,6 @@ namespace NZArchive
 		}
 
 		/// @brief      Uncompress a vector with ZSTD in stream mode.
-		/// @details    Uncompress a vector with ZSTD in stream mode.
 		/// @param  _VecIn		Vector of std::byte with compressed data
 		/// @param  _VecOut		Vector of std::byte with uncompressed data (vector will be cleared at the beginning of the process)
 		/// @return     ZSTD_stream_error, with detailed operation status
@@ -907,7 +973,6 @@ namespace NZArchive
 		}
 
 		/// @brief      Estimate the memory usage of a ZSTD context with a given compression level and thread numbers.
-		/// @details    Estimate the memory usage of a ZSTD context with a given compression level and thread numbers.
 		/// @param  BufferSize		Size of data to be compressed 
 		/// @param  CompressionLevel	Compression level (From 1 to 22)
 		/// @param  ThreadNumber		Number of thread used for compression
@@ -919,7 +984,6 @@ namespace NZArchive
 
 
 		/// @brief      Write archive header to FILE*. Also Set progression to 0 and restart the header recording of file
-		/// @details    Create file header identified by the MagicByte sequence followed by the NZAʀᴄʜɪᴠᴇ version.
 		/// @param  _ArchiveFILE		Pointer to a FILE* representing output archive
 		/// @param  Major, _Minus, _Revision : Set Version with these arguments
 		/// @return     True if write success, False if failed
@@ -941,8 +1005,7 @@ namespace NZArchive
 		}
 
 
-		/// @brief      Write a file to given FILE* archive in multithread mode.
-		/// @details    Write a file from wstring path to given FILE* archive at the given filepath emplacement in the archive with a given compression level in multithread mode.
+		/// @brief      Write a file from wstring path to given FILE* archive at the given filepath emplacement in the archive with a given compression level in multithread mode.
 		///             Buffer can be adapted.
 		/// @param  _ArchiveFILE		Pointer to a FILE* representing output archive
 		/// @param  _FileToAdd		Path as wstring to the source file
@@ -956,10 +1019,10 @@ namespace NZArchive
 		/// 	ADDFILE_CANTOPENFILE = (Source file can't be read);
 		/// 	ADDFILE_FATALERROR = (Unknown error);
 		/// 	ADDFILE_SUCCESS = (Operation success);
-		int archiveNZ_write_add_file(FILE* _ArchiveFILE, std::wstring _FileToAdd, std::wstring _FilePathInArchive, int _CompressionLevel = 3, EncryptionMethod mEncryptMethod = EncryptionMethod::encChaCha20, uint64_t _BUFFER = 32 * 1024 * 1024)
+		ADDFILE_ERROR archiveNZ_write_add_file(FILE* _ArchiveFILE, std::wstring _FileToAdd, std::wstring _FilePathInArchive, int _CompressionLevel = 3, EncryptionMethod mEncryptMethod = EncryptionMethod::encChaCha20, uint64_t _BUFFER = 32 * 1024 * 1024)
 		{
 			if (_ArchiveFILE == NULL)
-				return ADDFILE_FILEPOINTER_NULL;
+				return ADDFILE_ERROR::ADDFILE_FILEPOINTER_NULL;
 			if (_FileToAdd == L"" && _FilePathInArchive != L"")//create dummy directory
 			{
 				MutexComp.lock();
@@ -982,7 +1045,7 @@ namespace NZArchive
 				HEADER_write64(fMod.dwLowDateTime);
 				HEADER_write64(fMod.dwHighDateTime);
 				HEADER_write64((DWORD)FILE_ATTRIBUTE_NORMAL);
-				return ADDFILE_SUCCESS;
+				return ADDFILE_ERROR::ADDFILE_SUCCESS;
 			}
 			else if (std::filesystem::exists(_FileToAdd))
 			{
@@ -1015,7 +1078,7 @@ namespace NZArchive
 					HEADER_write64(fMod.dwHighDateTime);
 					DWORD FileAttr = GetFileAttributes(_FileToAdd.c_str());
 					HEADER_write64(FileAttr);
-					return ADDFILE_SUCCESS;
+					return ADDFILE_ERROR::ADDFILE_SUCCESS;
 				}
 				else
 				{
@@ -1052,20 +1115,10 @@ namespace NZArchive
 						{
 							{
 								XXH64_hash_t hashOut;
-								OutputDebugString(L"Starting compression with level ");
-								OutputDebugString(std::to_wstring(_CompressionLevel).c_str());
-								OutputDebugString(L", using ");
-								OutputDebugString(std::to_wstring(mMaxThread).c_str());
-								OutputDebugString(L" thread\n");
 								size_t const buffInSize = 512 * 1024/*ZSTD_CStreamInSize()*/;
 								void* const buffIn = malloc(buffInSize);
 								size_t const buffOutSize = 16 * 1024 * 1024/*ZSTD_COMPRESSBOUND(buffInSize)*//*ZSTD_CStreamOutSize()*/;
 								void* const buffOut = malloc(buffOutSize);
-								OutputDebugString(L"*BuffinSize=");
-								OutputDebugString(std::to_wstring(buffInSize).c_str());
-								OutputDebugString(L" bytes, BuffoutSize=");
-								OutputDebugString(std::to_wstring(buffOutSize).c_str());
-								OutputDebugString(L" bytes\n");
 								ZSTD_CCtx* const cctx = ZSTD_createCCtx();
 								ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, _CompressionLevel);
 								ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
@@ -1094,7 +1147,7 @@ namespace NZArchive
 												chacha::buffered_cipher cipher(chacha::key_bits_256, chacha::rounds20, &mVectorKEY[0], mNonce/*Nonce de l'archive*/);
 												cipher.transform((std::byte*)output.dst, (std::byte*)output.dst, output.pos);
 												vCrypted.resize(output.pos);
-												memcpy_s(&vCrypted[0], vCrypted.size(),output.dst,output.pos);
+												memcpy_s(&vCrypted[0], vCrypted.size(), output.dst, output.pos);
 											}
 											else if (mEncryptMethod == EncryptionMethod::encAES256)
 											{
@@ -1128,9 +1181,6 @@ namespace NZArchive
 											HEADER_write64(vCrypted.size());//Data Compressed and crypt size
 											hashOut = XXH3_64bits(&vCrypted[0], vCrypted.size());
 											HEADER_write64(hashOut);//Compressed XXHash64
-											OutputDebugString(L"*Writing stream of ");
-											OutputDebugString(std::to_wstring(vCrypted.size()).c_str());
-											OutputDebugString(L" bytes\n");
 											fwrite(&vCrypted[0], sizeof(std::byte), vCrypted.size(), _ArchiveFILE);
 											vCrypted.clear();
 										}
@@ -1147,31 +1197,29 @@ namespace NZArchive
 								free(buffOut);
 							}
 							HEADER_write64(UINT64_MAX);//EndOfCompression MARK COMP
-							//HEADER_write64(UINT64_MAX);//EndOfCompression MARK UNCOMP
 						}
 						fclose(fIN);
-						return ADDFILE_SUCCESS;
+						return ADDFILE_ERROR::ADDFILE_SUCCESS;
 					}
 					else
 					{
 						char _erMsg[4096];
 						strerror_s(_erMsg, errno);
 						OutputDebugStringA(std::string(std::string(_erMsg) + "\n").c_str());
-						return ADDFILE_CANTOPENFILE;
+						return ADDFILE_ERROR::ADDFILE_CANTOPENFILE;
 					}
 				}
-				return ADDFILE_FATALERROR;
+				return ADDFILE_ERROR::ADDFILE_FATALERROR;
 			}
 			else
 			{
-				return ADDFILE_FILENOTEXIST;
+				return ADDFILE_ERROR::ADDFILE_FILENOTEXIST;
 			}
-			return ADDFILE_FATALERROR;
+			return ADDFILE_ERROR::ADDFILE_FATALERROR;
 		}
 
 
-		/// @brief      Write archive footer to FILE*. 
-		/// @details    Create file footer identified by the MagicByte sequence. Help to know if file is complete when opening it for decompression operation.
+		/// @brief      Create file footer identified by the MagicByte sequence. Help to know if file is complete when opening it for decompression operation.
 		/// @return     True if write success, False if failed
 		bool archiveNZ_write_footer(FILE* _ArchiveFILE)
 		{
@@ -1192,8 +1240,7 @@ namespace NZArchive
 			return true;
 		}
 
-		/// @brief      Write a compressed and encrypted wstring to the Archive.
-		/// @details	Compress and encrypt the wstring and write it to the FILE* archive.
+		/// @brief  	Compress and encrypt the wstring and write it to the FILE* archive.
 		///				Writing is sequenced as follow :
 		///				uint64_t Uncompressed wstring size
 		///				uint64_t Compressed wstring size
@@ -1214,7 +1261,7 @@ namespace NZArchive
 		}
 
 		/// @brief      Set the max value to be used for progression reporting.
-		/// @details    It's hard to get progression if I don't know the goal, right ?
+		///		        It's hard to get progression if I don't know the goal, right ?
 		///				Setting the the total size of operation is mandatory.
 		/// @param  _MaxValue	Total size of operation
 		void archiveNZ_write_set_max_value_for_progress(uint64_t _MaxValue)
@@ -1224,8 +1271,7 @@ namespace NZArchive
 			MutexComp.unlock();
 		}
 
-		/// @brief      Retrieve operation progress.
-		/// @details    Retrieve a _ProgressReporting struct filled with
+		/// @brief      Retrieve a _ProgressReporting struct filled with
 		///             percentage of progression,
 		///				current position of operation,
 		///				Total position (Total size of operation)
@@ -1257,8 +1303,7 @@ namespace NZArchive
 			return 0;
 		}
 
-		/// @brief      Write a vector to given FILE* archive.
-		/// @details    Write a vector to given FILE* archive at the given filepath emplacement in the archive with a given compression level.
+		/// @brief      Write a vector to given FILE* archive at the given filepath emplacement in the archive with a given compression level.
 		///             Buffer can be adapted.
 		///				You can give FILETIME for each state Created, Modified, Last Access
 		///				If FILETIME value not set, using current date time
@@ -1277,7 +1322,7 @@ namespace NZArchive
 		/// 	ADDFILE_FILEPOINTER_NULL = (Invalide FILE*); 
 		/// 	ADDFILE_FATALERROR = (Unknown error);
 		/// 	ADDFILE_SUCCESS = (Operation success);
-		int archiveNZ_write_add_memory_vector(FILE* _ArchiveFILE, std::vector<std::byte>& _VectorToCompress, std::wstring _FilePathInArchive, int _CompressionLevel = 3, EncryptionMethod mEncryptCHACHA = EncryptionMethod::encChaCha20, uint64_t _BUFFER = 32 * 1024 * 1024, FILETIME _FILETime_C = { 0,0 }, FILETIME _FILETime_A = { 0,0 }, FILETIME _FILETime_M = { 0,0 }, DWORD _FileAttrib = FILE_ATTRIBUTE_NORMAL, bool _IsDirectory = false)
+		ADDFILE_ERROR archiveNZ_write_add_memory_vector(FILE* _ArchiveFILE, std::vector<std::byte>& _VectorToCompress, std::wstring _FilePathInArchive, int _CompressionLevel = 3, EncryptionMethod mEncryptCHACHA = EncryptionMethod::encChaCha20, uint64_t _BUFFER = 32 * 1024 * 1024, FILETIME _FILETime_C = { 0,0 }, FILETIME _FILETime_A = { 0,0 }, FILETIME _FILETime_M = { 0,0 }, DWORD _FileAttrib = FILE_ATTRIBUTE_NORMAL, bool _IsDirectory = false)
 		{
 			FILETIME ft;
 			SYSTEMTIME st;
@@ -1290,7 +1335,7 @@ namespace NZArchive
 			if (_FILETime_M.dwHighDateTime == 0 && _FILETime_M.dwLowDateTime == 0)
 				_FILETime_M = ft;
 			if (_ArchiveFILE == NULL)
-				return ADDFILE_FILEPOINTER_NULL;
+				return ADDFILE_ERROR::ADDFILE_FILEPOINTER_NULL;
 			{
 				MutexComp.lock();
 				mProgressComp.CurrentFile = _FilePathInArchive;
@@ -1307,7 +1352,7 @@ namespace NZArchive
 					HEADER_write64(_FILETime_M.dwLowDateTime);
 					HEADER_write64(_FILETime_M.dwHighDateTime);
 					HEADER_write64(_FileAttrib);
-					return ADDFILE_SUCCESS;
+					return ADDFILE_ERROR::ADDFILE_SUCCESS;
 				}
 				else
 				{
@@ -1342,15 +1387,17 @@ namespace NZArchive
 							HEADER_write64(UINT64_MAX);//EndOfCompression MARK COMP
 							HEADER_write64(UINT64_MAX);//EndOfCompression MARK UNCOMP
 						}
-						return ADDFILE_SUCCESS;
+						return ADDFILE_ERROR::ADDFILE_SUCCESS;
 					}
 				}
-				return ADDFILE_FATALERROR;
+				return ADDFILE_ERROR::ADDFILE_FATALERROR;
 			}
-			return ADDFILE_FATALERROR;
+			return ADDFILE_ERROR::ADDFILE_FATALERROR;
 		}
 
-		/// @brief      Structure containing information of a chunk of compressed bytes.
+		/// @brief	Structure containing information of a chunk of compressed bytes.
+		/// @param	hashCompressed	Hash of compressed chunk
+		/// @param	ChunkCompressed	Compressed chunk size
 		struct FileChunk
 		{
 			uint64_t hashCompressed = 0;
@@ -1358,6 +1405,16 @@ namespace NZArchive
 		};
 
 		/// @brief      Structure containing information of a file entry.
+		/// @param	FullPath			Path of the file
+		/// @param	isDirectory		Entry is a folder
+		/// @param	FiletimeA		File last access time
+		/// @param	FiletimeC		File creation time
+		/// @param	FiletimeM		File last modified time
+		/// @param	FileAttribute		File attribute
+		/// @param	PositionInArchive		Position of the file in the archive
+		/// @param	IndexInArchive		Index of the file in archive header
+		/// @param	EncryptionMethod	Method of encryption
+		/// @param	FileChunks		Vector of compressed chunks from the file
 		struct FileEntryRead
 		{
 			std::wstring FullPath = L"";
@@ -1368,7 +1425,6 @@ namespace NZArchive
 			FILETIME FiletimeM;
 			DWORD FileAttribute = 0;
 			uint64_t PositionInArchive = 0;
-			//uint64_t CopyPositionStart = 0;
 			uint64_t CopySize = 0;
 			uint64_t IndexInArchive = 0;
 			EncryptionMethod EncryptionMethod = EncryptionMethod::encNone;
@@ -1376,6 +1432,15 @@ namespace NZArchive
 		};
 
 		/// @brief      Structure containing archive information.
+		/// @param	NZArchiveVersion			Retrieve the version in a wstring of NZArchive used for this archive
+		/// @param	FullArchiveIncludingHeader	Full size of the archive (including the header)
+		/// @param	ArchiveHeaderSize		Size of the header
+		/// @param	ArchiveSizeCompressed		Size of the archive compressed
+		/// @param	ArchiveSizeUncompressed		Size of the archive uncompressed
+		/// @param	passwordError			Is password incorrect ?
+		/// @param	FileList				Vector of FileEntry
+		/// @param	isNZArchiveFile			Is the file an NZArchive file ?
+		/// @param	EncryptionMethod		Method of encryption
 		struct ArchiveEntry
 		{
 			std::wstring NZArchiveVersion = L"";
@@ -1503,7 +1568,7 @@ namespace NZArchive
 						}
 					else
 					{
-						OutputDebugString(L"Empty file\n");
+						//	Empty file
 					}
 					_FileEntryRead.CopySize = virtualFilePos - _FileEntryRead.PositionInArchive;
 					_FileEntryRead.IndexInArchive = _ArchiveEntry.FileList.size();
@@ -1526,8 +1591,7 @@ namespace NZArchive
 			return _ArchiveEntry;
 		}
 
-		/// @brief      Extract all file from FILE* archive to a specified path.
-		/// @details    Extract all file from FILE* archive to a specified path,
+		/// @brief      Extract all file from FILE* archive to a specified path,
 		///             if path don't exist, it will be created.
 		/// @param  _ArchiveFILE		Pointer to a FILE* representing input archive
 		/// @param  _PathToExtract		Path destination
@@ -1705,8 +1769,7 @@ namespace NZArchive
 			return OP_EXTRACT::OP_EXTRACT_SUCCESS;
 		}
 
-		/// @brief      Extract a single file from FILE* archive with a given index to a specified file path.
-		/// @details    Extract a single file from FILE* archive with a given index to a specified file path,
+		/// @brief      Extract a single file from FILE* archive with a given index to a specified file path,
 		///             FileIndex can be retrived from filelist.
 		/// @param  _ArchiveFILE		Pointer to a FILE* representing input archive
 		/// @param  _FileIndex		index of the file to be extracted
@@ -1767,6 +1830,7 @@ namespace NZArchive
 				}
 				//Opening file for writing
 				FILE* fOUT = NULL;
+				SetFileAttributes(FileToWrite.c_str(), FILE_ATTRIBUTE_NORMAL);
 				_wfopen_s(&fOUT, FileToWrite.c_str(), L"wb");
 				if (fOUT != NULL)
 				{
@@ -1774,10 +1838,10 @@ namespace NZArchive
 					//Start Offset
 					_fseeki64(_ArchiveFILE, _FileList.FileList[_FileIndex].PositionInArchive, SEEK_SET);
 
-					const size_t BuffSize = ZSTD_DStreamInSize();
-					size_t const buffInSize = ZSTD_DStreamInSize();
+					const size_t BuffSize = ZSTD_DStreamInSize()*16;
+					size_t const buffInSize = ZSTD_DStreamInSize()*16;
 					void* const buffIn = malloc(buffInSize);
-					size_t const buffOutSize = ZSTD_DStreamOutSize();  /* Guarantee to successfully flush at least one complete compressed block in all circumstances. */
+					size_t const buffOutSize = ZSTD_DStreamOutSize()*16;  /* Guarantee to successfully flush at least one complete compressed block in all circumstances. */
 					void* const buffOut = malloc(buffOutSize);
 					ZSTD_DCtx* const dctx = ZSTD_createDCtx();
 					if (dctx == NULL)
@@ -1850,6 +1914,9 @@ namespace NZArchive
 								break;//Exit
 						}
 					}
+					ZSTD_freeDCtx(dctx);
+					free(buffIn);
+					free(buffOut);
 
 					fclose(fOUT);
 					if (ErrorDATACorrupt)
@@ -1884,9 +1951,8 @@ namespace NZArchive
 			return OP_EXTRACT::OP_EXTRACT_SUCCESS;
 		}
 
-		/// @brief      Extract a single file from FILE* archive with a given index to a given vector.
-		/// @details    Extract a single file from FILE* archive with a given index to a given vector,
-		///             FileIndex can be retrived from filelist.
+		/// @brief	Extract a single file from FILE* archive with a given index to a given vector,
+		///			FileIndex can be retrived from filelist.
 		/// @param  _ArchiveFILE		Pointer to a FILE* representing input archive
 		/// @param  _FileIndex		index of the file to be extracted
 		/// @param  _OutVectorByte	Byte Vector with uncompressed file
@@ -2003,8 +2069,7 @@ namespace NZArchive
 			return OP_EXTRACT::OP_EXTRACT_SUCCESS;
 		}
 
-		/// @brief      Read a compressed and encrypted wstring from the Archive.
-		/// @details	Uncompress and encrypt the wstring in the FILE* archive to a wstring.
+		/// @brief		Uncompress and decrypt the wstring in the FILE* archive to a wstring.
 		///				Reading is sequenced as follow :
 		///				Get uint64_t Uncompressed wstring size
 		///				Get uint64_t Compressed wstring size
@@ -2025,11 +2090,9 @@ namespace NZArchive
 			return Result;
 		}
 
-		/// @brief      Retrieve operation progress.
-		/// @details    Retrieve a _ProgressReporting struct filled with
-		///             percentage of progression,
-		///				current position of operation,
-		///				Total position (Total size of operation)
+
+		/// @brief	Retrieve a _ProgressReporting struct filled with percentage of progression, 
+		///			current position of operation, Total position (Total size of operation)
 		/// @return     _ProgressReporting struct with progress information.
 		_ProgressReporting archiveNZ_read_get_progress_reporting()
 		{
@@ -2061,9 +2124,7 @@ namespace NZArchive
 			MutexComp.unlock();
 		}
 
-
-		/// @brief      Initialize Archive with default settings.
-		/// @details    Initialize Archive with defaut settings generated.
+		/// @brief      Initialize Archive with default settings generated.
 		Archive()
 		{
 			mVectorKEY.clear();
@@ -2073,8 +2134,7 @@ namespace NZArchive
 			memcpy_s(&mvMagicKey[0], mvMagicKey.size(), magicByte, mvMagicKey.size());
 		}
 
-		/// @brief      Set Archive encryption with given Key and Nonce.
-		/// @details    Set Archive encryption with given Key and Nonce,
+		/// @brief      Set Archive encryption with given Key and Nonce,
 		///             If both are empty, defaut one will be generated.
 		/// @param  _vectorKEY32  vector of 32 byte containing raw key
 		/// @param  _Nonce  arbitrary number value used as initialization encryption vector
@@ -2095,6 +2155,9 @@ namespace NZArchive
 			mvMagicKey.resize(8);
 			memcpy_s(&mvMagicKey[0], mvMagicKey.size(), magicByte, mvMagicKey.size());
 		}
+
+		/// @brief	Set the number of thread used by ZSTD in multithread compression
+		/// @param	MaxThread	Number of thread to be used
 		void archiveNZ_set_number_of_thread(size_t MaxThread)
 		{
 			//Seems that setting param to 1 make all thread workers spawned
@@ -2104,6 +2167,8 @@ namespace NZArchive
 				mMaxThread = MaxThread;//Starting 2, it's really meaning what it is supposed to means ... 
 		}
 
+		/// @brief	Retrieve the number of thread used by ZSTD in multithread compression
+		/// @return	SIZE_T	Number of thread
 		size_t archiveNZ_get_number_of_thread()
 		{
 			return mMaxThread;
@@ -2157,65 +2222,67 @@ namespace NZArchive
 		*		uint_64t	Min 𝟎 Max 𝟏𝟖𝟒𝟒𝟔𝟕𝟒𝟒𝟎𝟕𝟑𝟕𝟎𝟗𝟓𝟓𝟏𝟔𝟏𝟓	Representation in file	Min 𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎𝟎	Max 𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅𝐅    Size in unsigned char : 𝟖	*/
 
 		/// @brief      Read uint16_t (2 byte) data from a memory pointer with a minimum size of 2 byte from a FILE*.
-		uint16_t FILE_read16(FILE* Fichier)
+		uint16_t FILE_read16(FILE* _File)
 		{
 			std::vector<uint8_t> vec_uint16;
 			vec_uint16.resize(sizeof(uint16_t));
-			fread_s(&vec_uint16[0], sizeof(uint16_t), sizeof(uint8_t), sizeof(uint16_t), Fichier);
+			fread_s(&vec_uint16[0], sizeof(uint16_t), sizeof(uint8_t), sizeof(uint16_t), _File);
 			uint16_t val; memcpy_s(&val, sizeof(val), &vec_uint16[0], sizeof(val));
 			vec_uint16.clear();
 			return val;
 		}
 		/// @brief      Write uint16_t (2 byte) data from a memory pointer with a minimum size of 2 byte to a FILE*.
-		void FILE_write16(FILE* Fichier, uint16_t val)
+		void FILE_write16(FILE* _File, uint16_t val)
 		{
 			std::vector<uint8_t> vec_uint16;
 			vec_uint16.resize(sizeof(uint16_t));
 			MEM_write16(&vec_uint16[0], val);
-			fwrite(&vec_uint16[0], sizeof(uint8_t), sizeof(uint16_t), Fichier);
+			fwrite(&vec_uint16[0], sizeof(uint8_t), sizeof(uint16_t), _File);
 			vec_uint16.clear();
 		}
 		/// @brief      Read uint32_t (4 byte) data from a memory pointer with a minimum size of 4 byte from a FILE*.
-		uint32_t FILE_read32(FILE* Fichier)
+		uint32_t FILE_read32(FILE* _File)
 		{
 			std::vector<uint8_t> vec_uint32;
 			vec_uint32.resize(sizeof(uint32_t));
-			fread_s(&vec_uint32[0], sizeof(uint32_t), sizeof(uint8_t), sizeof(uint32_t), Fichier);
+			fread_s(&vec_uint32[0], sizeof(uint32_t), sizeof(uint8_t), sizeof(uint32_t), _File);
 			uint32_t val; memcpy_s(&val, sizeof(val), &vec_uint32[0], sizeof(val));
 			vec_uint32.clear();
 			return val;
 		}
 		/// @brief      Write uint32_t (4 byte) data from a memory pointer with a minimum size of 4 byte to a FILE*.
-		void FILE_write32(FILE* Fichier, uint32_t val)
+		void FILE_write32(FILE* _File, uint32_t val)
 		{
 			std::vector<uint8_t> vec_uint32;
 			vec_uint32.resize(sizeof(uint32_t));
 			MEM_write32(&vec_uint32[0], val);
-			fwrite(&vec_uint32[0], sizeof(uint8_t), sizeof(uint32_t), Fichier);
+			fwrite(&vec_uint32[0], sizeof(uint8_t), sizeof(uint32_t), _File);
 			vec_uint32.clear();
 		}
 		/// @brief      Read uint64_t (8 byte) data from a memory pointer with a minimum size of 8 byte from a FILE*.
-		uint64_t FILE_read64(FILE* Fichier)
+		uint64_t FILE_read64(FILE* _File)
 		{
 			std::vector<uint8_t> vec_uint64;
 			vec_uint64.resize(sizeof(uint64_t));
-			fread_s(&vec_uint64[0], sizeof(uint64_t), sizeof(uint8_t), sizeof(uint64_t), Fichier);
+			fread_s(&vec_uint64[0], sizeof(uint64_t), sizeof(uint8_t), sizeof(uint64_t), _File);
 			uint64_t val; memcpy_s(&val, sizeof(val), &vec_uint64[0], sizeof(val));
 			vec_uint64.clear();
 			return val;
 		}
 		/// @brief      Write uint64_t (8 byte) data from a memory pointer with a minimum size of 8 byte to a FILE*.
-		void FILE_write64(FILE* Fichier, uint64_t val)
+		void FILE_write64(FILE* _File, uint64_t val)
 		{
 			std::vector<uint8_t> vec_uint64;
 			vec_uint64.resize(sizeof(uint64_t));
 			MEM_write64(&vec_uint64[0], val);
-			fwrite(&vec_uint64[0], sizeof(uint8_t), sizeof(uint64_t), Fichier);
+			fwrite(&vec_uint64[0], sizeof(uint8_t), sizeof(uint64_t), _File);
 			vec_uint64.clear();
 		}
 #pragma endregion
 
 		/// @brief      Truncate archive FILE* from a number of byte. 
+		/// @param	_ArchiveFILE	Pointer to FILE (Archive file)
+		/// @param	_byteToRemove	Number of byte to remove from end (Truncate)
 		/// @return     True if truncate success, False if failed
 		bool archiveNZ_truncate_file_by(FILE* _ArchiveFILE, UINT64 _byteToRemove)
 		{
@@ -2232,13 +2299,15 @@ namespace NZArchive
 			SetEndOfFile(hFile);
 			return true;
 		}
-
+		/// @brief	Structure of the header stream
+		/// @param	Header	Raw header in std::byte
+		/// @param	Position	Position of the virtual header stream
 		struct HeaderStream
 		{
 			std::vector<std::byte> Header;
 			uint64_t Position = 0;
 		};
-		/// @brief      HeaderValue.
+		/// @brief      Header stream.
 		HeaderStream mHeader;
 
 #pragma region HEADER_Operation
@@ -2282,6 +2351,11 @@ namespace NZArchive
 
 	private:
 #ifdef USEWINDOWS_BCRYPT
+		/// @brief	Encrypt a vector of std::byte using BCrypt engine
+		/// @param	_VectorIn	Uncrypted Vector to encrypt
+		/// @param	_VectorOut	Encrypted Vector with BCrypt
+		/// @param	_IV		IV key
+		/// @param	_AES256KEY	AES256 Key ()
 		void BCryptEncryptVector(std::vector<std::byte>& _VectorIn, std::vector<std::byte>& _VectorOut, std::vector<std::byte> _IV, std::vector<std::byte> _AES256KEY)
 		{
 			NTSTATUS status;
@@ -2378,6 +2452,11 @@ namespace NZArchive
 			pbKeyObject.clear();
 			pbIV.clear();
 		}
+		/// @brief	Decrypt a vector of std::byte using BCrypt engine
+		/// @param	_VectorIn	Encrypted Vector to decrypt
+		/// @param	_VectorOut	Decrypted Vector with BCrypt
+		/// @param	_IV		IV key
+		/// @param	_AES256KEY	AES256 Key ()
 		void BCryptDecryptVector(std::vector<std::byte>& _VectorIn, std::vector<std::byte>& _VectorOut, std::vector<std::byte> _IV, std::vector<std::byte> _AES256KEY)
 		{
 			BCRYPT_ALG_HANDLE hAesAlg = NULL;
@@ -2470,6 +2549,9 @@ namespace NZArchive
 			pbIV.clear();
 		}
 #else
+		/// @brief	Add padding to Input block to be encrypted with TinyAES to be compatible with BCrypt CBC AES256 mode
+		/// @param	vTOPAD	Vector to be padded 
+		/// @param	PadSize	Size of padding (AES256 is 16 block by defaut)
 		void AES256AddPadding(std::vector<std::byte>& vTOPAD, int PadSize = 16)
 		{
 			if (vTOPAD.size() == 0)
@@ -2483,6 +2565,8 @@ namespace NZArchive
 			memset(&vTOPAD[vTOPAD.size() - ChrToAdd], (uint8_t)ChrToAdd, ChrToAdd);
 			return;
 		}
+		/// @brief	Remove padding to Input block after decryption with TinyAES to be compatible with BCrypt CBC AES256 mode
+		/// @param	vTPUNPAD	Vector to be unpadded 
 		void AddAES256RemovePadding(std::vector<std::byte>& vTPUNPAD)
 		{
 			if (vTPUNPAD.size() == 0)
@@ -2500,11 +2584,10 @@ namespace NZArchive
 			pft->dwHighDateTime = time_value >> 32;
 		}
 
-		ArchiveEntry mCachedArchive;
+		ArchiveEntry mCachedArchive;//Local cached archiveEntry 
 
 		/// @brief      Local pointer for thread management in Zstd (0 or 1 mean single thread,more is number of thread).
 		size_t mMaxThread = 0;
-
 
 		/// @brief      Mutex used to lock Compression progression when called asynchronously.
 		std::mutex MutexComp;
@@ -2518,9 +2601,8 @@ namespace NZArchive
 		std::vector<uint8_t> mvMagicKey;
 		/// @brief      vector of 32 byte containing raw key.
 		std::vector<std::byte> mVectorKEY;
-		/// @brief      Uint64_t Nonce : Arbitrary number used as initialization encryption vector.
-		uint64_t mNonce = XXH3_64bits(std::wstring(L"NZArchive").data(), std::wstring(L"NZArchive").size());
+		/// @brief      Uint64_t Nonce : Arbitrary number used as initialization encryption vector defaut when no password is provided.
+		uint64_t mNonce = XXH3_64bits(std::wstring(L"").data(), std::wstring(L"").size());
 
 	};
-
 }

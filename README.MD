@@ -43,6 +43,16 @@ Library used :
 
   * [WireHair](https://github.com/catid/wirehair)  
     by CatID. BSD 3-Clause License 
+    
+Icons used :
+  
+  * Toolbars icons - [Freepik on FlatIcon](https://www.flaticon.com/authors/freepik)  
+    by Freepik. Free for personal and commercial purpose with attribution.
+  
+Fonts used :
+  
+  * Roboto Condensed - [Google fonts](https://fonts.google.com/specimen/Roboto)  
+    by Christian Robertson. Apache License, Version 2.0.
   
 I provide with the source code my own compiled libraries of Zstandard in x64 / MT / VS2019 (v142).  
 You can build your own with the excellent [Packet Manager VCPKG tool from Microsoft](https://vcpkg.io/en/index.html)  
