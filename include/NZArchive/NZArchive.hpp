@@ -128,7 +128,7 @@ namespace WireHair
 
 		/// @brief	Set path of NPAR file and archive file
 		/// @param	FileToProceed	Full path of the file to proceed
-		/// @param	FilePAR		Length of the random wstring sequence
+		/// @param	FileNPAR	Length of the random wstring sequence
 		void SetPATH(std::wstring FileToProceed, std::wstring FileNPAR)
 		{
 			mFiletoprocess = FileToProceed;
@@ -313,7 +313,6 @@ namespace WireHair
 		/// @param	kMessageBytes		Maximum size for a block
 		/// @param	kPacketSize		Size of the packet
 		/// @param	FILESize			Size of the complete file
-		/// @param	nbBlockBase		How many base block are present
 		struct TableNPAR
 		{
 			uint64_t PercentRedundancy;//Percentage
@@ -724,7 +723,7 @@ namespace NZArchive
 	/// @brief	NZArchive, Revision version int
 	constexpr int NZArchiveRevision = NZARCHIVE_REVISION;
 
-	/// @brief	NZAʀᴄʜɪᴠᴇ, Magic byte definition
+	/// @brief	NZArchive, Magic byte definition
 	std::uint8_t magicByte[8] = { 0x4e, 0x5a, 0x41, 0x1f, 0xd5, 0x8a, 0x71, 0xbe };
 
 	/// @brief	Error status for file adding operation
@@ -752,7 +751,7 @@ namespace NZArchive
 	{
 	public:
 		/// @brief	Structure representing operation progression
-		/// @param	Progress		Opeation progress
+		/// @param	Progress		Operation progress
 		/// @param	Current		Current position
 		/// @param	Total		Total position
 		/// @param	CurrentFile	Current file treated		
@@ -874,7 +873,7 @@ namespace NZArchive
 			return true;
 		}
 
-		/// @brief      Compress a vector with ZSTD in stream mode (Meaning multithreading mode enabled).
+		/// @brief  Compress a vector with ZSTD in stream mode (Meaning multithreading mode enabled).
 		/// @param  _VecIn			Vector of std::byte with original data
 		/// @param  _VecOut			Vector of std::byte with compressed data (vector will be cleared at the beginning of the process)
 		/// @param  CompressionLevel	Compression level (From 1 to 22)
@@ -1220,7 +1219,8 @@ namespace NZArchive
 
 
 		/// @brief      Create file footer identified by the MagicByte sequence. Help to know if file is complete when opening it for decompression operation.
-		/// @return     True if write success, False if failed
+		/// @param		_ArchiveFILE		Pointer to a FILE* representing output archive
+		/// @return     Bool : True if write success, False if failed
 		bool archiveNZ_write_footer(FILE* _ArchiveFILE)
 		{
 			if (_ArchiveFILE == NULL)
@@ -1240,14 +1240,14 @@ namespace NZArchive
 			return true;
 		}
 
-		/// @brief  	Compress and encrypt the wstring and write it to the FILE* archive.
+		/// @brief  	Write a wstring with Unicode support to the FILE* archive.
 		///				Writing is sequenced as follow :
 		///				uint64_t Uncompressed wstring size
 		///				uint64_t Compressed wstring size
 		///				std::vector<std::byte> raw data
 		/// @param  _ArchiveFILE		Pointer to a FILE* representing output archive
-		/// @param  _wstring			wstring to be written
-		/// @return     True if write success, False if failed
+		/// @param  _wstring		wstring to be written
+		/// @return     BOOL 			True if write success, False if failed
 		bool archiveNZ_write_wstring(std::wstring _wstring)
 		{
 			std::vector<std::byte> _vecByte;
