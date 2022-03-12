@@ -21,8 +21,8 @@ UPDATE:
     BCrypt and TinyAES encrypted block are the same inside, NZArchive will always read the file from both builds.    
     ( You just have to comment/uncomment '#define USEWINDOWS_BCRYPT' line in include\NZArchive\NZArchive.hpp )  
   * For integrity matters, I created my own parity system.  
-    For each 32MiB block of the archive, a certain percentage can be recoverd if data get corrupted.  
-    (I'm using Wirehair library to create recovery block)  
+    For each 256MiB block of the archive, a certain percentage can be recoverd if data get corrupted from transfer/download/storage error.  
+    (I'm using Wirehair library to create error correction recovery block)  
   
 Feel free to use it, I'll be happy.  
 I placed it in MIT licence, keeping trace of it in your program would be nice...  
@@ -49,5 +49,5 @@ Fonts used :
   * Roboto Condensed - [Google fonts](https://fonts.google.com/specimen/Roboto)  
     by Christian Robertson. Apache License, Version 2.0.
   
-I provide with the source code my own compiled libraries of Zstandard in x64 / MT / VS2019 (v142).  
+I provide with the source code my own compiled libraries of Zstandard in x64 / MT / VS2019 (v142) and my own shell extension dll.  
 You can build your own with the excellent [Packet Manager VCPKG tool from Microsoft](https://vcpkg.io/en/index.html)  
