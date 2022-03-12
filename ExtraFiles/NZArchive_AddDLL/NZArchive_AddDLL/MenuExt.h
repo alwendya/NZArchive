@@ -14,6 +14,7 @@ namespace nsADDTO
     class MenuExt: public IShellExtInit, public IContextMenu
     {
     public:
+        #define NZA_Index 0x1981
         // IUnknown
         IFACEMETHODIMP QueryInterface(REFIID riid, void **ppv);
         IFACEMETHODIMP_(ULONG) AddRef();
@@ -33,19 +34,34 @@ namespace nsADDTO
         ~MenuExt(void);
 
     private:
-        void PerformAction();
+        void PerformActionAdd();
+        void PerformActionExtTo();
+        void PerformActionExtHere();
 
     private:
         long m_cRef;
-        std::wstring m_menuText;
-        std::string m_verb;
-        std::wstring m_wVerb;
-        std::string m_verbHelpText;
-        std::wstring m_wVerbHelpText;
-        std::string m_verbCanonicalName;
-        std::wstring m_wVerbCanonicalName;
+        std::wstring m_menuTextAdd;
+        std::string m_verbAdd;
+        std::wstring m_wVerbAdd;
+        std::string m_verbHelpTextAdd;
+        std::wstring m_wVerbHelpTextAdd;
+        std::string m_verbCanonicalNameAdd;
+        std::wstring m_wVerbCanonicalNameAdd;
+        std::wstring m_menuTextExtTo;
+        std::string m_verbExtTo;
+        std::wstring m_wVerbExtTo;
+        std::string m_verbHelpTextExtTo;
+        std::wstring m_wVerbHelpTextExtTo;
+        std::string m_verbCanonicalNameExtTo;
+        std::wstring m_wVerbCanonicalNameExtTo;
+        std::wstring m_menuTextExtHere;
+        std::string m_verbExtHere;
+        std::wstring m_wVerbExtHere;
+        std::string m_verbHelpTextExtHere;
+        std::wstring m_wVerbHelpTextExtHere;
+        std::string m_verbCanonicalNameExtHere;
+        std::wstring m_wVerbCanonicalNameExtHere;
         std::vector<std::wstring> m_wFileList;
-        std::vector<std::string> m_FileList;
         HANDLE m_hMenuBmp;
     };
 

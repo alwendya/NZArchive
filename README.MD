@@ -44,11 +44,6 @@ Library used :
   * [WireHair](https://github.com/catid/wirehair)  
     by CatID. BSD 3-Clause License 
     
-Icons used :
-  
-  * Toolbars icons - [Freepik on FlatIcon](https://www.flaticon.com/authors/freepik)  
-    by Freepik. Free for personal and commercial purpose with attribution.
-  
 Fonts used :
   
   * Roboto Condensed - [Google fonts](https://fonts.google.com/specimen/Roboto)  

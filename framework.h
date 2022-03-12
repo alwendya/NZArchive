@@ -120,10 +120,9 @@ static bool NPARAnalysisConform = false;		//bool returning if NPAR file analysis
 static bool OperationInProgress = false;		//bool telling if an operation is in progress
 static bool NeedAnalysis = false;				//bool returning the analysis need
 bool ListViewSortOrder[9];						//bool memorizing sort status of the listview
-//bool OpenFromcommandLine = false;				//bool to tell if the archive to open is y user choice (Open) or from the command line
-//bool isLocalizationLoaded = false;				//bool telling if Localization is successfully loaded
 bool OpenWith = false;							//bool telling if file must be open using defaut association or user selected one
 bool AddingFromDrop = false;					//bool telling if the files to add come from user choice (file / folders) or from an external drop
+bool isAssociated = false;						//bool telling if NZArchive is currently registered for file association and shell integration
 //NZArchive
 NZArchive::Archive::ArchiveEntry OpenListing;	//NZArchive used for Opened archive file listing
 NZArchive::Archive::ArchiveEntry ListTREE;		//NZArchive used specifically for listview navigation
@@ -134,6 +133,12 @@ static std::vector<_ListItemRetrieve> FileToTreat;	//Vector with all files to tr
 std::vector<iconStruct> vIconStruct;				//Vector with all loaded icon for file association
 static std::vector<std::wstring> vDropFILE;			//Vector with files to add via dropping
 static 	std::vector<std::wstring> vCMDFilesToAdd;
+//WNDPROC
+WNDPROC oldEditProc;
+
+static std::wstring CREATE_PATHARCHIVE = L"";
+static std::wstring CREATE_PATHSOURCE = L"";
+
 
 //INT64
 static int64_t FastExtractIndex = -1;			//Index of the file to fast extract
@@ -151,7 +156,7 @@ constexpr auto ID_DELETE = 0x2346;		//Id's for delete button button in toolbar
 constexpr auto ID_TEST = 0x2347;		//Id's for test button button in toolbar
 constexpr auto ID_TEXTNAV = 0x2350;		//Id's for navigation bar (read only) in main window
 //Command line
-enum class CmdMode : uint8_t { Mode_Open, Mode_Create, Mode_Extract, Mode_None, Mode_DropFile };
+enum class CmdMode : uint8_t { Mode_Open, Mode_Create, Mode_Extract, Mode_ExtractHere, Mode_None, Mode_DropFile };
 static CmdMode sCMDMode = CmdMode::Mode_None;	//Keep trace of command line arguments
 
 /*	   ___          _                     __                  _   _
@@ -223,7 +228,7 @@ BOOL CenterWindowFromActiveScreen(HWND hwndWindow)
 		{
 			int xPos = ((lpmi2.rcMonitor.right - lpmi2.rcMonitor.left) - (rcWindow.right - rcWindow.left)) / 2;
 			int yPos = ((lpmi2.rcMonitor.bottom - lpmi2.rcMonitor.top) - (rcWindow.bottom - rcWindow.top)) / 2;
-			MoveWindow(hwndWindow, lpmi2.rcMonitor.left + xPos, lpmi2.rcMonitor.top + yPos, rcWindow.right- rcWindow.left, rcWindow.bottom - rcWindow.top, TRUE);
+			MoveWindow(hwndWindow, lpmi2.rcMonitor.left + xPos, lpmi2.rcMonitor.top + yPos, rcWindow.right - rcWindow.left, rcWindow.bottom - rcWindow.top, TRUE);
 		}
 	}
 	return 0;
@@ -788,7 +793,6 @@ void UI_Refresh_Variable(HWND hWnd)
 	UI_SetText_ToSubMenu(hWnd, ID_LANG, TRANSLATE(L"MENU_LANG", L"&Language  (Ctrl+L)"));
 	UI_SetText_ToSubMenu(hWnd, ID_ABOUT, TRANSLATE(L"MENU_ABOUT", L"&About  (Ctrl+B)"));
 	UI_SetText_ToSubMenu(hWnd, ID_SETTINGS_ASSOCIATENZARCHIVEWITHNZAFILES, TRANSLATE(L"MENU_ASSONZA", L"&Associate NZArchive with NZA files"));
-	UI_SetText_ToSubMenu(hWnd, ID_SETTINGS_REMOVENZAASSOCIATION, TRANSLATE(L"MENU_ASSOREMOVE", L"&Remove NZA association"));
 	UI_SetText_ToLVColumn(ghListView, 0, TRANSLATE(L"LIST_COL0", L"Name"));
 	UI_SetText_ToLVColumn(ghListView, 1, TRANSLATE(L"LIST_COL1", L"Size"));
 	UI_SetText_ToLVColumn(ghListView, 2, TRANSLATE(L"LIST_COL2", L"Packed"));
@@ -1149,4 +1153,40 @@ bool getWindowsBit(bool& isWindows64bit)
 #endif
 }
 
+/// @brief	Load specific icon size from a ressource ID icon 
+/// @param	WORD IconIDI			Icon index from ressource
+/// @param	SIZE_T NeededDimension		Size of the icon to extract
+/// @param	HINSTANCE hINST		HINSTANCE of the current program
+/// @return	HICON, NULL if no icon found, non NULL if icon is loaded
+HICON LoadIconFromMultipleIconFile(WORD IconIDI,size_t NeededDimension, HINSTANCE hINST = GetModuleHandle(NULL))
+{
+	return (HICON)LoadImage(hINST, MAKEINTRESOURCE(IconIDI),
+		IMAGE_ICON, NeededDimension, NeededDimension, LR_DEFAULTSIZE | LR_SHARED);
+}
 
+/// @brief	Load specific icon size from a ressource ID icon to a picture box
+/// @param	WORD IconIDI			Icon index from ressource
+/// @param	SIZE_T NeededDimension		Size of the icon to extract
+/// @param	HINSTANCE hINST		HINSTANCE of the current program
+/// @param	HWND DESThwnd		HWND of the current windows containing the picture box control
+/// @param	DWORD ControlID		Picture box control index in the dialog
+/// @return	bool, true if icon found, false if no icon found
+bool LoadIconFromMultipleIconFileToHwnd(WORD IconIDI, size_t NeededDimension, HWND DESThwnd, DWORD ControlID, HINSTANCE hINST = GetModuleHandle(NULL))
+{
+	HICON mICON = (HICON)LoadImage(hINST, MAKEINTRESOURCE(IconIDI),
+		IMAGE_ICON, NeededDimension, NeededDimension, LR_DEFAULTSIZE | LR_SHARED);
+	if (mICON == NULL)
+		return false;
+	SendDlgItemMessage(DESThwnd, ControlID, STM_SETIMAGE, IMAGE_ICON, (LPARAM)mICON);
+	DeleteObject(mICON);
+	return true;
+}
+
+/// @brief	Check / Uncheck a menu item
+/// @param	mHWND	Windows handle containing the menu
+/// @param	IDMenuItem	ID of the menu item
+/// @param	mChecked	Checked or not ?
+void CheckItem(HWND mHWND, DWORD IDMenuItem, bool mChecked)
+{
+	CheckMenuItem(GetMenu(mHWND), IDMenuItem, MF_BYCOMMAND | (mChecked?MF_CHECKED: MF_UNCHECKED));
+}

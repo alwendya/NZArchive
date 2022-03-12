@@ -12,7 +12,7 @@
 * Version :
 *	1.0	:	Stable version for NZArchive GUI
 *	0.9 :	Without using MFC or GPL library for dropping file out of NZArchive window,
-*			I byapssed the problem by detecting opened File Explorer window and letting
+*			I bypassed the problem by detecting opened File Explorer window and letting
 *			the user extract to choosen one
 *	0.8 :	Instead of a list containing all file in the archive,
 *			I switched to a Explorer like windows explorer ( or 7zip like, my big inspiration source)
@@ -61,9 +61,10 @@ INT_PTR CALLBACK	DeleteDialog(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	ChangeDialog(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	AddFileDialog(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	IntegrityChecking(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    YesPickCancelDialog(HWND, UINT, WPARAM, LPARAM);
 static LRESULT CALLBACK lvWndProc(const HWND, const UINT, const WPARAM, const LPARAM);
 BOOL ListView_handler(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK subEditProc(HWND, UINT, WPARAM, LPARAM);
+
 
 /*	 ___    _              _              ___                 _    _
 	/ __> _| |_ ___  _ _ _| |_ _ _  ___  | __>_ _ ._ _  ___ _| |_ <_> ___ ._ _
@@ -85,7 +86,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
 	wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_NZAGUI);
 	wcex.lpszClassName = szWindowClass;
-	wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+	wcex.hIconSm = LoadIconFromMultipleIconFile(IDI_NZAGUI, 32, wcex.hInstance);
 	return RegisterClassExW(&wcex);
 }
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
@@ -106,7 +107,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 		DialogBox(hInst, MAKEINTRESOURCE(IDD_CreateArchive), NULL, ArcCreateDialog);
 		return FALSE;
 	}
-	else if (sCMDMode == CmdMode::Mode_Extract)
+	else if (sCMDMode == CmdMode::Mode_Extract || sCMDMode == CmdMode::Mode_ExtractHere)
 	{
 		//TODO CMDMODE
 		DialogBox(hInst, MAKEINTRESOURCE(IDD_ExtractArchive), NULL, ExtractionDialog);
@@ -155,13 +156,37 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 				vCMDFilesToAdd.push_back(std::wstring(argv[i + 1]));
 			//Getting the smaller one
 			std::sort(vCMDFilesToAdd.begin(), vCMDFilesToAdd.end(), [](const std::wstring& first, const std::wstring& second) {return first.size() < second.size(); });
-			std::wstring Shorty = vCMDFilesToAdd[0];
-			Shorty = Shorty.substr(0, Shorty.find_last_of(L"\\") + 1) + L"Archive_of_" + std::to_wstring(vCMDFilesToAdd.size()) + L"_Entry.nza";
-			vCMDFilesToAdd.insert(vCMDFilesToAdd.begin(), Shorty);
+			std::wstring RootPath = vCMDFilesToAdd[0];
+			RootPath = RootPath.substr(0, RootPath.find_last_of(L"\\")) /* + L"Archive_of_" + std::to_wstring(vCMDFilesToAdd.size()) + L"_Entry.nza"*/;
+			std::wstring RootFolder = RootPath;
+			if (RootFolder.find_last_of(L"\\") == std::wstring::npos)
+			{//No more \, we have the root
+				std::wstring::value_type volumeLabelBuffer[MAX_PATH];
+				BOOL result = ::GetVolumeInformation(
+					std::wstring(RootFolder + L"\\").c_str(),
+					volumeLabelBuffer,
+					sizeof(volumeLabelBuffer) / sizeof(volumeLabelBuffer[0]),
+					nullptr,
+					nullptr,
+					nullptr,
+					nullptr,
+					0);
+				RootFolder = volumeLabelBuffer;
+			}
+			else
+			{//We have subfolder, let's keep it
+				RootFolder = RootFolder.substr(RootFolder.find_last_of(L"\\") + 1);
+			}
+			vCMDFilesToAdd.insert(vCMDFilesToAdd.begin(), RootPath + L"\\" + RootFolder + L".nza");
 		}
 		if (_wcsicmp(argv[1], L":extract") == 0 && argc == 3)
 		{//Extract (2 args)
 			sCMDMode = CmdMode::Mode_Extract;
+			vCMDFilesToAdd.push_back(std::wstring(argv[2]));
+		}
+		if (_wcsicmp(argv[1], L":extracthere") == 0 && argc == 3)
+		{//Extract (2 args)
+			sCMDMode = CmdMode::Mode_ExtractHere;
 			vCMDFilesToAdd.push_back(std::wstring(argv[2]));
 		}
 	}
@@ -244,6 +269,16 @@ BOOL MainWnd_WM_CREATE(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		NeedAnalysis = true;
 		PostMessage(hWnd, WM_COMMAND, ID_OPEN, 0);
 	}
+
+	//Checking if NZArchive is currently associated
+	HKEY rTestKey;
+	if (RegOpenKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\", &rTestKey) == ERROR_SUCCESS)//Classes doesn't exist, need to rewrite
+		isAssociated = true;
+	else
+		isAssociated = false;
+	RegCloseKey(rTestKey);
+	OutputDebugString(std::to_wstring(isAssociated).c_str());
+	CheckItem(hWnd, ID_SETTINGS_ASSOCIATENZARCHIVEWITHNZAFILES, isAssociated);
 	return TRUE;
 }
 BOOL MainWnd_WM_COMMAND(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -663,120 +698,124 @@ BOOL MainWnd_WM_COMMAND(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	}
 	else if (wmId == ID_SETTINGS_ASSOCIATENZARCHIVEWITHNZAFILES)
 	{
-		TCHAR szPath[MAX_PATH];//Application Path
-		DWORD pathLen = 0;
-		pathLen = GetModuleFileName(NULL, szPath, MAX_PATH);
-		std::wstring ArgPAth = L"\"" + std::wstring(szPath) + L"\" \"%1\"";
-		bool WriteToRegistry = false;
-		while (true)
-		{
-			HKEY rTestKey;
-			if (RegOpenKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\", &rTestKey) != ERROR_SUCCESS)//Classes doesn't exist, need to rewrite
+		if (isAssociated)
+		{//Associated, need to remove then...
+			isAssociated = !isAssociated;
+			CheckItem(g_hWnd, ID_SETTINGS_ASSOCIATENZARCHIVEWITHNZAFILES, isAssociated);
+			/*
+			* Key to remove :
+			* Software\\Classes\\NZArchive\\DefaultIcon
+			* Software\\Classes\\NZArchive\\shell
+			* Software\\Classes\\.nza
+			* We keep the Lang information
+			*/
+			HKEY rKeySoftwareClasses;
+			RegOpenKey(HKEY_CURRENT_USER, L"Software\\Classes", &rKeySoftwareClasses);
+			RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\DefaultIcon");
+			RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\shell\\open\\command");
+			RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\shell\\open");
+			RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\shell");
+			RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\.nza");
+
 			{
-				WriteToRegistry = true;
+				// SOURCE OF EXT DLL : https://www.apriorit.com/dev-blog/357-shell-extentions-basics-samples-common-problems
+
+				TCHAR szPath[MAX_PATH];
+				DWORD pathLen = 0;
+				pathLen = GetModuleFileName(NULL, szPath, MAX_PATH);
+				std::wstring PathDLL(szPath);
+				PathDLL = PathDLL.substr(0, PathDLL.find_last_of(L"\\") + 1);
+
+				bool is64 = false;
+				getWindowsBit(is64);
+				if (is64)
+				{
+					HINSTANCE hinst;
+					hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s /u \"" + PathDLL + L"NZAAddfiles.64.dll\"").c_str(), NULL, SW_SHOW);
+					if ((size_t)hinst <= 32) MessageBox(g_hWnd, L"Unregistering NZAAddfiles.64.dll failed", L"ERROR", MB_ICONERROR);
+				}
+				else
+				{
+					HINSTANCE hinst;
+					hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s /u \"" + PathDLL + L"NZAAddfiles.32.dll\"").c_str(), NULL, SW_SHOW);
+					if ((size_t)hinst <= 32) MessageBox(g_hWnd, L"Unregistering NZAAddfiles.32.dll failed", L"ERROR", MB_ICONERROR);
+				}
+			}
+		}
+		else
+		{//Not registered, we register then...
+			isAssociated = !isAssociated;
+			CheckItem(g_hWnd, ID_SETTINGS_ASSOCIATENZARCHIVEWITHNZAFILES, isAssociated);
+			TCHAR szPath[MAX_PATH];//Application Path
+			DWORD pathLen = 0;
+			pathLen = GetModuleFileName(NULL, szPath, MAX_PATH);
+			std::wstring ArgPAth = L"\"" + std::wstring(szPath) + L"\" \"%1\"";
+			bool WriteToRegistry = false;
+			while (true)
+			{
+				HKEY rTestKey;
+				if (RegOpenKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\", &rTestKey) != ERROR_SUCCESS)//Classes doesn't exist, need to rewrite
+				{
+					WriteToRegistry = true;
+					RegCloseKey(rTestKey);
+					break;
+				}
+				DWORD BufferSize = MAX_PATH;
+				TCHAR wKeyValue[MAX_PATH];
+				auto Res = RegGetValue(rTestKey, L"DefaultIcon", NULL, RRF_RT_ANY, NULL, &wKeyValue, &BufferSize);
+				if (std::wstring(wKeyValue) != std::wstring(szPath))//Classes does exist but filepath aren't the same, need to rewrite
+					WriteToRegistry = true;
 				RegCloseKey(rTestKey);
 				break;
 			}
-			DWORD BufferSize = MAX_PATH;
-			TCHAR wKeyValue[MAX_PATH];
-			auto Res = RegGetValue(rTestKey, L"DefaultIcon", NULL, RRF_RT_ANY, NULL, &wKeyValue, &BufferSize);
-			if (std::wstring(wKeyValue) != std::wstring(szPath))//Classes does exist but filepath aren't the same, need to rewrite
-				WriteToRegistry = true;
-			RegCloseKey(rTestKey);
-			break;
-		}
-		if (WriteToRegistry)
-		{
-			//Need to write 'cause the path has changed before or entry never existed
-			HKEY rKeySoftwareClasses;
-			RegOpenKey(HKEY_CURRENT_USER, L"Software\\Classes", &rKeySoftwareClasses);
-			HKEY rKeySoftwareClassesTypes;
-			RegCreateKey(rKeySoftwareClasses, L"NZArchive\\DefaultIcon", &rKeySoftwareClassesTypes);
-			RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, szPath, NULL);
-			RegCreateKey(rKeySoftwareClasses, L"NZArchive\\shell\\open\\command", &rKeySoftwareClassesTypes);
-			RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, ArgPAth.c_str(), NULL);
-			RegCreateKey(rKeySoftwareClasses, L".nza\\DefaultIcon", &rKeySoftwareClassesTypes);
-			RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, szPath, NULL);
-			RegCreateKey(rKeySoftwareClasses, L".nza", &rKeySoftwareClassesTypes);
-			RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, L"NZArchive", NULL);
-			RegCloseKey(rKeySoftwareClassesTypes);
-			RegCloseKey(rKeySoftwareClasses);
-			//Update Shell
-			SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
-		}
-		{
-			// SOURCE OF EXT DLL : https://www.apriorit.com/dev-blog/357-shell-extentions-basics-samples-common-problems
-
-			TCHAR szPath[MAX_PATH];
-			DWORD pathLen = 0;
-			pathLen = GetModuleFileName(NULL, szPath, MAX_PATH);
-			std::wstring PathDLL(szPath);
-			PathDLL = PathDLL.substr(0, PathDLL.find_last_of(L"\\") + 1);
-
-			bool is64 = false;
-			getWindowsBit(is64);
-			if (is64)
+			if (WriteToRegistry)
 			{
-				HINSTANCE hinst;
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAAddfiles.64.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAAddfiles.64.dll failed", L"ERROR", MB_ICONERROR);
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAExtract.64.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAExtract.64.dll failed", L"ERROR", MB_ICONERROR);
+				//Need to write 'cause the path has changed before or entry never existed
+				HKEY rKeySoftwareClasses;
+				RegOpenKey(HKEY_CURRENT_USER, L"Software\\Classes", &rKeySoftwareClasses);
+				HKEY rKeySoftwareClassesTypes;
+				RegCreateKey(rKeySoftwareClasses, L"NZArchive\\DefaultIcon", &rKeySoftwareClassesTypes);
+				RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, szPath, NULL);
+				RegCreateKey(rKeySoftwareClasses, L"NZArchive\\shell\\open\\command", &rKeySoftwareClassesTypes);
+				RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, ArgPAth.c_str(), NULL);
+				RegCreateKey(rKeySoftwareClasses, L".nza\\DefaultIcon", &rKeySoftwareClassesTypes);
+				RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, szPath, NULL);
+				RegCreateKey(rKeySoftwareClasses, L".nza", &rKeySoftwareClassesTypes);
+				RegSetValue(rKeySoftwareClassesTypes, NULL, REG_SZ, L"NZArchive", NULL);
+				RegCloseKey(rKeySoftwareClassesTypes);
+				RegCloseKey(rKeySoftwareClasses);
+				//Update Shell
+				SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 			}
-			else
 			{
-				HINSTANCE hinst;
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAAddfiles.32.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAAddfiles.32.dll failed", L"ERROR", MB_ICONERROR);
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAExtract.32.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAExtract.32.dll failed", L"ERROR", MB_ICONERROR);
-			}
-		}
-	}
-	else if (wmId == ID_SETTINGS_REMOVENZAASSOCIATION)
-	{
-		/*
-		* Key to remove :
-		* Software\\Classes\\NZArchive\\DefaultIcon
-		* Software\\Classes\\NZArchive\\shell
-		* Software\\Classes\\.nza
-		* We keep the Lang information
-		*/
-		HKEY rKeySoftwareClasses;
-		RegOpenKey(HKEY_CURRENT_USER, L"Software\\Classes", &rKeySoftwareClasses);
-		RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\DefaultIcon");
-		RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\shell\\open\\command");
-		RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\shell\\open");
-		RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\NZArchive\\shell");
-		RegDeleteKey(HKEY_CURRENT_USER, L"Software\\Classes\\.nza");
+				// SOURCE OF EXT DLL : https://www.apriorit.com/dev-blog/357-shell-extentions-basics-samples-common-problems
 
-		{
-			// SOURCE OF EXT DLL : https://www.apriorit.com/dev-blog/357-shell-extentions-basics-samples-common-problems
+				TCHAR szPath[MAX_PATH];
+				DWORD pathLen = 0;
+				pathLen = GetModuleFileName(NULL, szPath, MAX_PATH);
+				std::wstring PathDLL(szPath);
+				PathDLL = PathDLL.substr(0, PathDLL.find_last_of(L"\\") + 1);
 
-			TCHAR szPath[MAX_PATH];
-			DWORD pathLen = 0;
-			pathLen = GetModuleFileName(NULL, szPath, MAX_PATH);
-			std::wstring PathDLL(szPath);
-			PathDLL = PathDLL.substr(0, PathDLL.find_last_of(L"\\") + 1);
+				bool is64 = false;
+				getWindowsBit(is64);
+				if (is64)
+				{
+					HINSTANCE hinst;
+					hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAAddfiles.64.dll\"").c_str(), NULL, SW_SHOW);
+					if ((size_t)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAAddfiles.64.dll failed", L"ERROR", MB_ICONERROR);
+					hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAExtract.64.dll\"").c_str(), NULL, SW_SHOW);
+					if ((size_t)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAExtract.64.dll failed", L"ERROR", MB_ICONERROR);
+				}
+				else
+				{
+					HINSTANCE hinst;
+					hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAAddfiles.32.dll\"").c_str(), NULL, SW_SHOW);
+					if ((size_t)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAAddfiles.32.dll failed", L"ERROR", MB_ICONERROR);
+					hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s \"" + PathDLL + L"NZAExtract.32.dll\"").c_str(), NULL, SW_SHOW);
+					if ((size_t)hinst <= 32) MessageBox(g_hWnd, L"Registering NZAExtract.32.dll failed", L"ERROR", MB_ICONERROR);
+				}
+			}
 
-			bool is64 = false;
-			getWindowsBit(is64);
-			if (is64)
-			{
-				HINSTANCE hinst;
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s /u \"" + PathDLL + L"NZAAddfiles.64.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Unregistering NZAAddfiles.64.dll failed", L"ERROR", MB_ICONERROR);
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s /u \"" + PathDLL + L"NZAExtract.64.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Unregistering NZAExtract.64.dll failed", L"ERROR", MB_ICONERROR);
-			}
-			else
-			{
-				HINSTANCE hinst;
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s /u \"" + PathDLL + L"NZAAddfiles.32.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Unregistering NZAAddfiles.32.dll failed", L"ERROR", MB_ICONERROR);
-				hinst = ShellExecute(NULL, L"open", L"regsvr32", std::wstring(L"/s /u \"" + PathDLL + L"NZAExtract.32.dll\"").c_str(), NULL, SW_SHOW);
-				if ((int)hinst <= 32) MessageBox(g_hWnd, L"Unregistering NZAExtract.32.dll failed", L"ERROR", MB_ICONERROR);
-			}
 		}
 
 	}
@@ -1028,6 +1067,15 @@ INT_PTR CALLBACK ArchiveInformationDialog(HWND hDlg, UINT message, WPARAM wParam
 			InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
 			InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"LBL_AI_NBDIR", L"Number of folder(s) :").c_str(), -1, false);
 			InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"LBL_AI_NBDIR2", L"%s folder(s)", thousandSeparator(DireNbr).c_str()).c_str(), -1, false);
+			if (std::filesystem::exists(mArchiveName + L".npar"))
+			{
+				auto NPARInfo = NZArchive::WIREHAIR_RetrieveNPARInformation(mArchiveName + L".npar");
+				InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"", L"").c_str(), -1, false);
+				InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"LBL_AI_NPARFILE", L"NPAR File :").c_str(), -1, false);
+				InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"LBL_AI_TBLSZ", L"Table size is %s", BytesToSize(NPARInfo.TABLEFILESize).c_str()).c_str(), -1, false);
+				InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"LBL_AI_REDPERCENT", L"Redundancy percent is %s%%", std::to_wstring(NPARInfo.PercentRedundancy).c_str()).c_str(), -1, false);
+				InsertItemListbox(hAI_LISTBOX, TRANSLATE(L"LBL_AI_BKSIZE", L"Block size is %s (%s packet of %s per block)", BytesToSize(NPARInfo.kMessageBytes).c_str(), thousandSeparator(NPARInfo.kMessageBytes / NPARInfo.kPacketSize).c_str(), BytesToSize(NPARInfo.kPacketSize).c_str()).c_str(), -1, false);
+			}
 			fclose(fIN);
 		}
 		CenterWindowFromParent(hDlg);
@@ -1076,10 +1124,8 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 	static HWND hCREATE_LBDROPLEVEL = NULL;
 	static HWND hCREATE_DIALOG = NULL;
 	static bool CancelOperation = false;
-	static std::wstring CREATE_PATHARCHIVE = L"";
-	static std::wstring CREATE_PATHSOURCE = L"";
 	static NZArchive::Archive _LArchiveCREATE;
-	static WireHair::Helper WireHelper;
+	static NZArchive::WireHairHelper WireHelper;
 	UNREFERENCED_PARAMETER(lParam);
 	switch (message)
 	{
@@ -1103,9 +1149,11 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 		for (size_t i = 0; i < 22; i++)
 		{
 			std::wstring CompLevel = std::to_wstring(i + 1) + L" ";
-			if (i == 0) CompLevel += TRANSLATE(L"LBL_WORDFASTER", L" Faster");
-			if (i == 21) CompLevel += TRANSLATE(L"LBL_WORDSLOWER", L" Slower");
-			if (i == 4) CompLevel += TRANSLATE(L"LBL_WORDSSTANDARD", L" Standard");
+			if (i == 0) CompLevel += TRANSLATE(L"LBL_WORDFAST", L" Fast");
+			if (i == 4) CompLevel += TRANSLATE(L"LBL_WORDSTANDARD", L" Standard");
+			if (i == 12) CompLevel += TRANSLATE(L"LBL_WORDSLOW", L" Slow");
+			if (i == 18) CompLevel += TRANSLATE(L"LBL_WORDREALLYSLOW", L" Really slow");
+			if (i == 21) CompLevel += TRANSLATE(L"LBL_WORDULTRASLOW", L" Ultra slow");
 			int pos = (int)SendMessage(hCREATE_LBDROPLEVEL, CB_ADDSTRING, 0, (LPARAM)CompLevel.c_str());
 			SendMessage(hCREATE_LBDROPLEVEL, CB_SETITEMDATA, pos, (LPARAM)i);
 		}
@@ -1119,7 +1167,7 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 			int pos = (int)SendMessage(hCREATE_LBDROPCPU, CB_ADDSTRING, 0, (LPARAM)std::wstring(std::to_wstring(i + 1)).c_str());
 			SendMessage(hCREATE_LBDROPCPU, CB_SETITEMDATA, pos, (LPARAM)i);
 		}
-		SendMessage(hCREATE_LBDROPCPU, CB_SETCURSEL, 0, 0);
+		SendMessage(hCREATE_LBDROPCPU, CB_SETCURSEL, (numCPU == 0) ? 1 : numCPU - 1, 0);
 		hCREATE_PASSWORD = GetDlgItem(hDlg, IDC_CREATE_PASSWORD);
 		hCREATE_EDIT_Dest = GetDlgItem(hDlg, IDC_CREATE_EDIT_Dest);
 		hCREATE_Edit_SourceFolder = GetDlgItem(hDlg, IDC_CREATE_Edit_SourceFolder);
@@ -1150,8 +1198,8 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 		std::wstring Conv = TRANSLATE(L"LBLCREATE_LBL_REDUNDANCY2", L"%s%% of the archive", std::to_wstring(5).c_str());
 		SendMessage(hCREATE_LBL_REDUNDANCY2, WM_SETTEXT, 0, (LPARAM)Conv.c_str());
 		{
-			std::wstring MemCost = BytesToSize(((1 > 1) ? 1 * ZSTD_estimateCCtxSize(5) : ZSTD_estimateCCtxSize(5)) + 32 * 1024 * 1024 + ZSTD_compressBound(32 * 1024 * 1024) + 4 * 1024 * 1024 + 1 * 1024 * 1024/*ZSTD_CStreamInSize() + ZSTD_CStreamOutSize()*/);
-			Conv = TRANSLATE(L"LBLCREATE_LBL_THREAD2", L"%s core [Memory cost : %s]", std::to_wstring(1).c_str(), MemCost.c_str());
+			std::wstring MemCost = BytesToSize(((numCPU > 1) ? numCPU * ZSTD_estimateCCtxSize(5) : ZSTD_estimateCCtxSize(5)) + 32 * 1024 * 1024 + ZSTD_compressBound(32 * 1024 * 1024) + 4 * 1024 * 1024 + 1 * 1024 * 1024/*ZSTD_CStreamInSize() + ZSTD_CStreamOutSize()*/);
+			Conv = TRANSLATE(L"LBLCREATE_LBL_THREAD2", L"%s core [Memory cost : %s]", std::to_wstring((numCPU == 0) ? 1 : numCPU).c_str(), MemCost.c_str());
 			SendMessage(hCREATE_LBL_THREAD2, WM_SETTEXT, 0, (LPARAM)Conv.c_str());
 		}
 		CenterWindowFromActiveScreen(hDlg);
@@ -1161,10 +1209,15 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 			SetWindowText(hCREATE_Edit_SourceFolder, vCMDFilesToAdd[1].c_str());
 			SetWindowText(hCREATE_EDIT_Dest, vCMDFilesToAdd[0].c_str());
 			EnableWindow(hCREATE_BTN_Start, true);
-			SetFocus(hCREATE_BTN_Start);
-			//EnableWindow(g_hWnd, false);
-			//ShowWindow(g_hWnd, SW_HIDE);
+			SetFocus(hCREATE_EDIT_Dest);
+			size_t LastSlash = vCMDFilesToAdd[0].find_last_of(L"\\");
+			if (LastSlash == std::wstring::npos)
+				SendMessage(hCREATE_EDIT_Dest, EM_SETSEL, 0, -1);
+			else
+				SendMessage(hCREATE_EDIT_Dest, EM_SETSEL, LastSlash + 1, vCMDFilesToAdd[0].size() - 4);
+
 		}
+		oldEditProc = (WNDPROC)SetWindowLongPtr(hCREATE_EDIT_Dest, GWLP_WNDPROC, (LONG_PTR)subEditProc);
 	}
 	return (INT_PTR)FALSE;
 	case WM_HSCROLL:
@@ -1259,7 +1312,9 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 
 			if (sCMDMode == CmdMode::Mode_Create)
 			{
-				CREATE_PATHARCHIVE = vCMDFilesToAdd[0];
+				auto wBUFFER = std::make_unique<wchar_t[]>(MAX_PATH_EX);
+				GetWindowText(hCREATE_EDIT_Dest, (LPWSTR)wBUFFER.get(), MAX_PATH_EX);
+				CREATE_PATHARCHIVE = std::wstring(wBUFFER.get())/*vCMDFilesToAdd[0]*/;
 				CREATE_PATHSOURCE = L"DUMMY";
 			}
 			if (CREATE_PATHARCHIVE == L"" && CREATE_PATHSOURCE == L"")
@@ -1275,6 +1330,9 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 			EnableWindow(hCREATE_PASSWORD, false);
 			EnableWindow(hCREATE_LBDROPCPU, false);
 			EnableWindow(hCREATE_LBDROPLEVEL, false);
+			EnableWindow(hCREATE_Edit_SourceFolder, false);
+			EnableWindow(hCREATE_EDIT_Dest, false);
+
 			std::thread CreateThread([&]() {
 				cTASKBar.setProgressValue(g_hWnd, 0, 100);
 				cTASKBar.setProgressState(g_hWnd, TBPF_INDETERMINATE);
@@ -1346,11 +1404,11 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 						while (!KillFileProgressThread)
 						{
 							std::this_thread::sleep_for(100ms);
-							WireHair::Helper::Progression lPGType = WireHair::Helper::Progression::P_None;
+							NZArchive::WireHairHelper::Progression lPGType = NZArchive::WireHairHelper::Progression::P_None;
 							auto PercentPAR = WireHelper.GenerateProgress(lPGType);
 							std::wstring wsAvancement(L"");
 							auto PercentInformation = _LArchiveCREATE.archiveNZ_write_get_progress_reporting();
-							if (PercentInformation.Total > 0 && lPGType == WireHair::Helper::Progression::P_None)
+							if (PercentInformation.Total > 0 && lPGType == NZArchive::WireHairHelper::Progression::P_None)
 							{
 								std::vector<wchar_t> __Path;
 								__Path.resize(32000);
@@ -1362,17 +1420,17 @@ INT_PTR CALLBACK ArcCreateDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM 
 								SendMessage(hCREATE_Progression_byte, WM_SETTEXT, 0, (LPARAM)wsAvancement.c_str());
 								cTASKBar.setProgressValue(g_hWnd, (ULONGLONG)PercentInformation.Progress, 100);
 							}
-							else if (lPGType != WireHair::Helper::Progression::P_None)
+							else if (lPGType != NZArchive::WireHairHelper::Progression::P_None)
 							{
 								std::wstring nparPATH = (sCMDMode == CmdMode::Mode_Create) ? vCMDFilesToAdd[0] + L".npar" + L"\0" : CREATE_PATHARCHIVE + L".npar" + L"\0";
 								PathCompactPath(NULL, &nparPATH[0], 500);
 								SendMessage(hCREATE_File_being_compressed, WM_SETTEXT, 0, (LPARAM)&nparPATH[0]);
 								SendMessage(hCREATE_Progress, PBM_SETPOS, (int)PercentPAR, 0);
-								if (lPGType == WireHair::Helper::Progression::P_CreateTable)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_CreateTable)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_CREATETABLE", L"Creating integrity table");
-								if (lPGType == WireHair::Helper::Progression::P_Error)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_Error)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_PERROR", L"Error during generation of parity table");
-								if (lPGType == WireHair::Helper::Progression::P_Success)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_Success)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_PSUCCESS", L"Parity table successfully created");
 
 								SendMessage(hCREATE_Progression_byte, WM_SETTEXT, 0, (LPARAM)wsAvancement.c_str());
@@ -1522,18 +1580,14 @@ INT_PTR CALLBACK ExtractionDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM
 	case WM_INITDIALOG:
 	{
 		CenterWindowFromParent(hDlg);
-		if (sCMDMode == CmdMode::Mode_Extract)
+		if (sCMDMode == CmdMode::Mode_Extract || sCMDMode == CmdMode::Mode_ExtractHere)
 		{
 			CenterWindowFromActiveScreen(hDlg);
 			mArchiveName = vCMDFilesToAdd[0];
 			mExtractPAth = mArchiveName.substr(0, mArchiveName.find_last_of(L"\\") + 1);
 			ExtractAll = true;
 
-			auto Result = DialogBox(hInst, MAKEINTRESOURCE(IDD_YesFolderCancel), hDlg, YesPickCancelDialog);
-			if (Result == IDC_YFC_B_OK)
-			{
-			}
-			if (Result == IDC_YFC_B_PICK)
+			if (sCMDMode == CmdMode::Mode_Extract)
 			{
 				HRESULT hr;
 				CComPtr<IFileOpenDialog> pDlg;
@@ -1562,12 +1616,10 @@ INT_PTR CALLBACK ExtractionDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM
 					}
 				}
 				if (mExtractPAth == L"")
-					Result = IDCANCEL;
-			}
-			if (Result == IDC_YFC_B_CANCEL)
-			{
-				EndDialog(hDlg, LOWORD(wParam));
-				return (INT_PTR)TRUE;
+				{
+					EndDialog(hDlg, LOWORD(wParam));
+					return (INT_PTR)TRUE;
+				}
 			}
 			//Integrity
 			NPARAnalysisConform = true;
@@ -1695,7 +1747,7 @@ INT_PTR CALLBACK ExtractionDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM
 					if (cError == 0)
 						InsertItemListbox(hEXTR_LISTBOX, TRANSLATE(L"LBL_EXTR_FINISHEDNOERRORS", L"Finished...No errors during decompression..."));
 					else
-						InsertItemListbox(hEXTR_LISTBOX, TRANSLATE(L"LBL_EXTR_FINISHED", L"Finished... (%s errors)",std::to_wstring(cError).c_str()));
+						InsertItemListbox(hEXTR_LISTBOX, TRANSLATE(L"LBL_EXTR_FINISHED", L"Finished... (%s errors)", std::to_wstring(cError).c_str()));
 				EnableWindow(hEXTR_BTNCancel, FALSE);
 				EnableWindow(hEXTR_BTNClose, TRUE);
 				if (WFHelper->ExtractToExplorer)
@@ -1719,7 +1771,7 @@ INT_PTR CALLBACK ExtractionDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM
 				}
 				KillFileProgressThread = true;
 			}
-			if (sCMDMode == CmdMode::Mode_Extract && cError == 0)
+			if ((sCMDMode == CmdMode::Mode_Extract && cError == 0 ) || (sCMDMode == CmdMode::Mode_ExtractHere && cError == 0))
 				PostMessage(hCpyHDlg, WM_COMMAND, ID_EXTR_Close, 0);
 			});
 		ExtractionThread.detach();
@@ -1895,7 +1947,7 @@ INT_PTR CALLBACK AddFileDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 	static std::wstring SourcePath = L"";
 	static std::wstring CBOX_WString = L"";
 	static NZArchive::Archive _LArchiveADD;
-	static WireHair::Helper WireHelper;
+	static NZArchive::WireHairHelper WireHelper;
 	static std::vector<std::wstring> vTreePath;
 
 	UNREFERENCED_PARAMETER(lParam);
@@ -1925,9 +1977,11 @@ INT_PTR CALLBACK AddFileDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		for (size_t i = 0; i < 22; i++)
 		{
 			std::wstring CompLevel = std::to_wstring(i + 1) + L" ";
-			if (i == 0) CompLevel += TRANSLATE(L"LBL_WORDFASTER", L" Faster");
-			if (i == 21) CompLevel += TRANSLATE(L"LBL_WORDSSTANDARD", L" Standard");
-			if (i == 4) CompLevel += TRANSLATE(L"LBL_WORDSLOWER", L" Slower");
+			if (i == 0) CompLevel += TRANSLATE(L"LBL_WORDFAST", L" Fast");
+			if (i == 4) CompLevel += TRANSLATE(L"LBL_WORDSTANDARD", L" Standard");
+			if (i == 12) CompLevel += TRANSLATE(L"LBL_WORDSLOW", L" Slow");
+			if (i == 18) CompLevel += TRANSLATE(L"LBL_WORDREALLYSLOW", L" Really slow");
+			if (i == 21) CompLevel += TRANSLATE(L"LBL_WORDULTRASLOW", L" Ultra slow");
 			int pos = (int)SendMessage(hADD_LBOX_LEVEL, CB_ADDSTRING, 0, (LPARAM)CompLevel.c_str());
 			SendMessage(hADD_LBOX_LEVEL, CB_SETITEMDATA, pos, (LPARAM)i);
 		}
@@ -1941,7 +1995,7 @@ INT_PTR CALLBACK AddFileDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 			int pos = (int)SendMessage(hADD_LBOX_CPU, CB_ADDSTRING, 0, (LPARAM)std::wstring(std::to_wstring(i + 1)).c_str());
 			SendMessage(hADD_LBOX_CPU, CB_SETITEMDATA, pos, (LPARAM)i);
 		}
-		SendMessage(hADD_LBOX_CPU, CB_SETCURSEL, 0, 0);
+		SendMessage(hADD_LBOX_CPU, CB_SETCURSEL, (numCPU == 0) ? 1 : numCPU - 1, 0);
 		SetWindowTheme(hADD_PROGRESS, L"", L"");
 		SetWindowLongPtr(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(hADD_PROGRESS));
 		SendMessage(hADD_PROGRESS, (UINT)PBM_SETBKCOLOR, 0, RGB(200, 200, 200));
@@ -1951,8 +2005,8 @@ INT_PTR CALLBACK AddFileDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 		SendMessageW(hADD_LISTBOX, LB_INITSTORAGE, 2000/*Pre allocate list box with 2000 items*/, 2048/*With 2048 bytes*/);
 		SendMessageW(hADD_LISTBOX, LB_SETHORIZONTALEXTENT, (WPARAM)4000, 0);
 		CenterWindowFromParent(hDlg);
-		std::wstring MemCost = BytesToSize(((1 > 1) ? 1 * ZSTD_estimateCCtxSize(5) : ZSTD_estimateCCtxSize(5)) + 32 * 1024 * 1024 + ZSTD_compressBound(32 * 1024 * 1024) + 4 * 1024 * 1024 + 1 * 1024 * 1024/*ZSTD_CStreamInSize() + ZSTD_CStreamOutSize()*/);
-		std::wstring Conv = TRANSLATE(L"LBLCREATE_LBL_THREAD2", L"%s core [Memory cost : %s]", std::to_wstring(1).c_str(), MemCost.c_str());
+		std::wstring MemCost = BytesToSize(((numCPU > 1) ? numCPU * ZSTD_estimateCCtxSize(5) : ZSTD_estimateCCtxSize(5)) + 32 * 1024 * 1024 + ZSTD_compressBound(32 * 1024 * 1024) + 4 * 1024 * 1024 + 1 * 1024 * 1024/*ZSTD_CStreamInSize() + ZSTD_CStreamOutSize()*/);
+		std::wstring Conv = TRANSLATE(L"LBLCREATE_LBL_THREAD2", L"%s core [Memory cost : %s]", std::to_wstring((numCPU == 0) ? 1 : numCPU).c_str(), MemCost.c_str());
 		SendMessage(hADD_IDC_ADD_LBL_THREAD2, WM_SETTEXT, 0, (LPARAM)Conv.c_str());
 		NZArchive::Archive _lArchive;
 		NZArchive::Archive::ArchiveEntry _Listing;
@@ -2236,16 +2290,16 @@ INT_PTR CALLBACK AddFileDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 					uint64_t pSize = 0;
 					uint64_t RedundancyPercent = UINT64_MAX;
 					if (std::filesystem::exists(mArchiveName + L".npar"))
-						RedundancyPercent = WireHair::WIREHAIR_RetrievePercentFromFile(mArchiveName + L".npar");
+						RedundancyPercent = NZArchive::WIREHAIR_RetrieveNPARInformation(mArchiveName + L".npar").PercentRedundancy;
 					auto _ArcInfo = _LArchiveADD.archiveNZ_read_extract_file_list(fOUT);
 					/* TO ADD FILE, we need to remove the old header*/
 					{
 						uint64_t PosHeaderCompSize = 8/*magic byte*/ + sizeof(uint16_t)/*EOA*/ + (4 * sizeof(uint64_t))/*Header size uncomp / Comp + hashIn + hashOut*/;
 						_fseeki64(fOUT, std::filesystem::file_size(mArchiveName) - PosHeaderCompSize, SEEK_SET); //Position of uint64_t containg header comp/uncomp size
-						auto szHeaderUncomp = _LArchiveADD.FILE_read64(fOUT);// We get decompressed size
-						auto szHeaderComp = _LArchiveADD.FILE_read64(fOUT);//We get the compressed size
+						auto szHeaderUncomp = NZArchive::FILE_read64(fOUT);// We get decompressed size
+						auto szHeaderComp = NZArchive::FILE_read64(fOUT);//We get the compressed size
 						uint64_t PosHeaderCompBegin = PosHeaderCompSize + szHeaderComp;
-						_LArchiveADD.archiveNZ_truncate_file_by(fOUT, PosHeaderCompBegin);	//We remove the header from file
+						NZArchive::UTIL_truncate_file_by(fOUT, PosHeaderCompBegin);	//We remove the header from file
 					}
 					cTASKBar.setProgressValue(g_hWnd, 0, 100);
 					cTASKBar.setProgressState(g_hWnd, TBPF_NORMAL);
@@ -2255,11 +2309,11 @@ INT_PTR CALLBACK AddFileDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 						while (!KillFileProgressThread)
 						{
 							std::this_thread::sleep_for(100ms);
-							WireHair::Helper::Progression lPGType = WireHair::Helper::Progression::P_None;
+							NZArchive::WireHairHelper::Progression lPGType = NZArchive::WireHairHelper::Progression::P_None;
 							double Percent = WireHelper.GenerateProgress(lPGType);
 							std::wstring wsAvancement(L"");
 							auto PercentInformation = _LArchiveADD.archiveNZ_write_get_progress_reporting();
-							if (PercentInformation.Total > 0 && lPGType == WireHair::Helper::Progression::P_None)
+							if (PercentInformation.Total > 0 && lPGType == NZArchive::WireHairHelper::Progression::P_None)
 							{
 								std::vector<wchar_t> __Path;
 								__Path.resize(32000);
@@ -2271,18 +2325,18 @@ INT_PTR CALLBACK AddFileDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lP
 								SendMessage(hADD_LBL_AVANCEMENT2, WM_SETTEXT, 0, (LPARAM)wsAvancement.c_str());
 								cTASKBar.setProgressValue(g_hWnd, (ULONGLONG)PercentInformation.Progress, 100);
 							}
-							else if (lPGType != WireHair::Helper::Progression::P_None)
+							else if (lPGType != NZArchive::WireHairHelper::Progression::P_None)
 							{
 								std::wstring nparPATH = mArchiveName + L".npar" + L"\0";
 								PathCompactPath(NULL, &nparPATH[0], 500);
 								SendMessage(hADD_LBL_AVANCEMENT, WM_SETTEXT, 0, (LPARAM)&nparPATH[0]);
 								SendMessage(hADD_PROGRESS, PBM_SETPOS, (int)Percent, 0);
 								wsAvancement = L"";
-								if (lPGType == WireHair::Helper::Progression::P_CreateTable)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_CreateTable)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_CREATETABLE", L"Creating integrity table");
-								if (lPGType == WireHair::Helper::Progression::P_Error)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_Error)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_PERROR", L"Error during generation of parity table");
-								if (lPGType == WireHair::Helper::Progression::P_Success)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_Success)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_PSUCCESS", L"Parity table successfully created");
 
 								SendMessage(hADD_LBL_AVANCEMENT2, WM_SETTEXT, 0, (LPARAM)wsAvancement.c_str());
@@ -2390,7 +2444,7 @@ INT_PTR CALLBACK DeleteDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 	static HWND hDELETE_WinDialog = NULL;
 	static NZArchive::Archive _LArchiveDELETE;
 	static NZArchive::Archive _LArchiveSRCHEADER;
-	static WireHair::Helper WireHelper;
+	static NZArchive::WireHairHelper WireHelper;
 
 	UNREFERENCED_PARAMETER(lParam);
 	switch (message)
@@ -2426,7 +2480,7 @@ INT_PTR CALLBACK DeleteDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 			uint64_t pSize = 0;
 			uint64_t NPAR_Redundancy = UINT64_MAX;
 			if (std::filesystem::exists(mArchiveName + L".npar"))
-				NPAR_Redundancy = WireHair::WIREHAIR_RetrievePercentFromFile(mArchiveName + L".npar");
+				NPAR_Redundancy = NZArchive::WIREHAIR_RetrieveNPARInformation(mArchiveName + L".npar").PercentRedundancy;
 			try
 			{
 				std::filesystem::rename(mArchiveName, std::wstring(mArchiveName + L".backup").c_str());
@@ -2544,11 +2598,11 @@ INT_PTR CALLBACK DeleteDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 						std::vector<std::byte> compressedHeader;
 						_LArchiveDELETE.CompAndCrypt(srcHeader.Header, compressedHeader, headerHashIn, headerHashOut, 22, NZArchive::EncryptionMethod::encChaCha20);
 						fwrite(&compressedHeader[0], sizeof(std::byte), compressedHeader.size(), fOUT);
-						_LArchiveDELETE.FILE_write64(fOUT, srcHeader.Header.size());
-						_LArchiveDELETE.FILE_write64(fOUT, compressedHeader.size());
-						_LArchiveDELETE.FILE_write64(fOUT, headerHashIn);
-						_LArchiveDELETE.FILE_write64(fOUT, headerHashOut);
-						_LArchiveDELETE.FILE_write16(fOUT, UINT16_MAX);//End archive
+						NZArchive::FILE_write64(fOUT, srcHeader.Header.size());
+						NZArchive::FILE_write64(fOUT, compressedHeader.size());
+						NZArchive::FILE_write64(fOUT, headerHashIn);
+						NZArchive::FILE_write64(fOUT, headerHashOut);
+						NZArchive::FILE_write16(fOUT, UINT16_MAX);//End archive
 						fwrite(NZArchive::magicByte, sizeof(NZArchive::magicByte), 1, fOUT);
 					}
 					_Progress = (double)_ftelli64(fIN) * 100.0 / (double)Listing.FullArchiveIncludingHeader;
@@ -2583,14 +2637,14 @@ INT_PTR CALLBACK DeleteDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 							while (!killNPARThread)
 							{
 								std::this_thread::sleep_for(100ms);
-								WireHair::Helper::Progression lPGType = WireHair::Helper::Progression::P_None;
+								NZArchive::WireHairHelper::Progression lPGType = NZArchive::WireHairHelper::Progression::P_None;
 								auto PercentPAR = WireHelper.GenerateProgress(lPGType);
 								wsAvancement = L"";
-								if (lPGType == WireHair::Helper::Progression::P_CreateTable)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_CreateTable)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_CREATETABLE", L"Creating integrity table");
-								if (lPGType == WireHair::Helper::Progression::P_Error)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_Error)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_PERROR", L"Error during generation of parity table");
-								if (lPGType == WireHair::Helper::Progression::P_Success)
+								if (lPGType == NZArchive::WireHairHelper::Progression::P_Success)
 									wsAvancement = TRANSLATE(L"LBL_NPAR_PSUCCESS", L"Parity table successfully created");
 
 								SendMessage(hDELETE_lblAvancementFile, WM_SETTEXT, 0, (LPARAM)wsAvancement.c_str());
@@ -2752,7 +2806,7 @@ INT_PTR CALLBACK TestArchiveDialog(HWND hDlg, UINT message, WPARAM wParam, LPARA
 					if (cError == 0)
 						InsertItemListbox(hTEST_LISTBOX, TRANSLATE(L"LBL_TEST_FINISHEDNOERRORS", L"Finished...No errors during test..."));
 					else
-						InsertItemListbox(hTEST_LISTBOX, TRANSLATE(L"LBL_TEST_FINISHED", L"Finished... (%s errors)",std::to_wstring(cError).c_str()));
+						InsertItemListbox(hTEST_LISTBOX, TRANSLATE(L"LBL_TEST_FINISHED", L"Finished... (%s errors)", std::to_wstring(cError).c_str()));
 				std::vector<wchar_t> __Path;
 				__Path.resize(32000);
 				if (Listing.FileList.size() > 0)
@@ -2906,52 +2960,12 @@ INT_PTR CALLBACK AboutDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPar
 		SendMessage(GetDlgItem(hDlg, IDC_ABOUT1), WM_SETFONT, (WPARAM)hFont20, FALSE);
 		SendMessage(GetDlgItem(hDlg, IDC_ABOUT2), WM_SETFONT, (WPARAM)hFont14bold, FALSE);
 		SendMessage(GetDlgItem(hDlg, IDC_ABOUT3), WM_SETFONT, (WPARAM)hFont14, FALSE);
+		//Load *32 size
+		LoadIconFromMultipleIconFileToHwnd(IDI_NZAGUI, 32, hDlg, IDC_STATIC);
 	}
 	return (INT_PTR)TRUE;
 	case WM_COMMAND:
 		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-		{
-			EndDialog(hDlg, LOWORD(wParam));
-			return (INT_PTR)TRUE;
-		}
-		break;
-	}
-	return (INT_PTR)FALSE;
-}
-
-
-/*	 ___      _                   _     ___  _    _     ___  _       _
-	| __>__ _| |_ _ _  ___  ___ _| |_  | . \| |  | |   | . \<_> ___ | | ___  ___
-	| _> \ \/| | | '_><_> |/ | ' | |   | | || |_ | |_  | | || |<_> || |/ . \/ . |
-	|___>/\_\|_| |_|  <___|\_|_. |_|   |___/|___||___| |___/|_|<___||_|\___/\_. |
-																			<___'
-*/
-INT_PTR CALLBACK YesPickCancelDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	UNREFERENCED_PARAMETER(lParam);
-	switch (message)
-	{
-	case WM_INITDIALOG:
-	{
-		CenterWindowFromActiveScreen(hDlg);
-		::EnumChildWindows(hDlg, [](HWND __hwnd, LPARAM __lparam) -> BOOL { SendMessage(__hwnd, WM_SETFONT, (WPARAM)hFont14, FALSE); return TRUE; }, NULL);
-		TranslateAllInThisChild(hDlg);
-		SetWindowText(GetDlgItem(hDlg, IDC_YFC_EDIT), mExtractPAth.c_str());
-		SetWindowText(hDlg, TRANSLATE(L"LBL_EXTRACT_EXTRACTALLTO", L"Extract all files to ...").c_str());
-	}
-	return (INT_PTR)TRUE;
-	case WM_COMMAND:
-		if (LOWORD(wParam) == IDC_YFC_B_OK)
-		{
-			EndDialog(hDlg, LOWORD(wParam));
-			return (INT_PTR)TRUE;
-		}
-		if (LOWORD(wParam) == IDC_YFC_B_PICK)
-		{
-			EndDialog(hDlg, LOWORD(wParam));
-			return (INT_PTR)TRUE;
-		}
-		if (LOWORD(wParam) == IDC_YFC_B_CANCEL)
 		{
 			EndDialog(hDlg, LOWORD(wParam));
 			return (INT_PTR)TRUE;
@@ -2972,7 +2986,7 @@ INT_PTR CALLBACK IntegrityChecking(HWND hDlg, UINT message, WPARAM wParam, LPARA
 	static HWND hINT_PROGRESS = NULL;
 	static HWND hINT_LISTBOX = NULL;
 	static HWND hINT_DIALOG = NULL;
-	static WireHair::Helper wireHelper;
+	static NZArchive::WireHairHelper wireHelper;
 	UNREFERENCED_PARAMETER(lParam);
 	switch (message)
 	{
@@ -2980,13 +2994,13 @@ INT_PTR CALLBACK IntegrityChecking(HWND hDlg, UINT message, WPARAM wParam, LPARA
 	{
 		::EnumChildWindows(hDlg, [](HWND __hwnd, LPARAM __lparam) -> BOOL { SendMessage(__hwnd, WM_SETFONT, (WPARAM)hFont14, FALSE); return TRUE; }, NULL);
 		SetWindowText(hDlg, TRANSLATE(L"LBL_INT_TITLE", L"Integrity checking").c_str());
+		TranslateAllInThisChild(hDlg);
 		CenterWindowFromParent(hDlg);
 		hINT_DIALOG = hDlg;
 		hINT_LISTBOX = GetDlgItem(hDlg, IDC_INTEGRITY_LISTBOX);
 		SendMessageW(hINT_LISTBOX, LB_INITSTORAGE, 2000/*Pre allocate list box with 2000 items*/, 2048/*With 2048 bytes*/);
 		SendMessageW(hINT_LISTBOX, LB_SETHORIZONTALEXTENT, (WPARAM)4000, 0);
 		SendMessage(hINT_LISTBOX, WM_SETFONT, (WPARAM)hFont14, FALSE);
-
 		hINT_PROGRESS = GetDlgItem(hDlg, IDC_INTEGRITY_PROGRESS);
 		SetWindowTheme(hINT_PROGRESS, L"", L"");
 		SetWindowLongPtr(hDlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(hINT_PROGRESS));
@@ -2994,33 +3008,30 @@ INT_PTR CALLBACK IntegrityChecking(HWND hDlg, UINT message, WPARAM wParam, LPARA
 		SendMessage(hINT_PROGRESS, (UINT)PBM_SETBARCOLOR, 0, (LPARAM)RGB(100, 100, 100));
 		SendMessage(hINT_PROGRESS, (UINT)PBM_SETMARQUEE, (WPARAM)TRUE, (LPARAM)50);
 		SendMessage(hINT_PROGRESS, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
-
-
 		cTASKBar.setProgressValue(g_hWnd, 0, 100);
 		cTASKBar.setProgressState(g_hWnd, TBPF_INDETERMINATE);
-
 		static bool KillFileProgressThread;
 		KillFileProgressThread = false;
-
+		static std::thread::id ThreadID;
 		std::thread CheckingThread([&]() {
 			cTASKBar.setProgressState(g_hWnd, TBPF_NORMAL);
 			cTASKBar.setProgressValue(g_hWnd, 0, 100);
 			std::thread WatchThread([&]() {
-				WireHair::Helper::Progression oldProgression = WireHair::Helper::Progression::P_None;
+				NZArchive::WireHairHelper::Progression oldProgression = NZArchive::WireHairHelper::Progression::P_None;
 				while (!KillFileProgressThread)
 				{
 					std::this_thread::sleep_for(100ms);
 					std::wstring wsAvancement(L"");
-					WireHair::Helper::Progression Progression;
+					NZArchive::WireHairHelper::Progression Progression;
 					double Percentage = wireHelper.ControlAndRepairProgress(Progression);
 					SendMessage(hINT_PROGRESS, PBM_SETPOS, (int)Percentage, 0);
 					cTASKBar.setProgressValue(g_hWnd, (int)Percentage, 100);
 					if (Progression != oldProgression)//Changing state
-						if (Progression == WireHair::Helper::Progression::P_AnalysingFile)
+						if (Progression == NZArchive::WireHairHelper::Progression::P_AnalysingFile)
 							InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_ANA", L"Hashing archive file "));
-						else if (Progression == WireHair::Helper::Progression::P_CreateTable)
+						else if (Progression == NZArchive::WireHairHelper::Progression::P_CreateTable)
 							InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_CRE", L"Populating block table from parity file "));
-						else if (Progression == WireHair::Helper::Progression::P_Repairing)
+						else if (Progression == NZArchive::WireHairHelper::Progression::P_Repairing)
 							InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_REP", L"Repairing archive... "));
 					oldProgression = Progression;
 				}
@@ -3033,35 +3044,38 @@ INT_PTR CALLBACK IntegrityChecking(HWND hDlg, UINT message, WPARAM wParam, LPARA
 			auto Result = wireHelper.ControlAndRepair();
 			switch (Result)
 			{
-			case WireHair::Helper::CandRError::C_CantOpenNPARFile:
+			case NZArchive::WireHairHelper::CandRError::C_CantOpenNPARFile:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_CANTOPENNPARFILE", L"Can't open parity file "));
 				break;
-			case WireHair::Helper::CandRError::C_CantOpenArchiveFile:
+			case NZArchive::WireHairHelper::CandRError::C_CantOpenArchiveFile:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_CANTOPENARCHIVEFILE", L"Can't open archive file "));
 				break;
-			case WireHair::Helper::CandRError::C_ArchiveIsNotSameSize:
+			case NZArchive::WireHairHelper::CandRError::C_ArchiveIsNotSameSize:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_ARCHIVEISNOTSAMESIZE", L"Archive size inside parity file isn't the same size then actual archive "));
 				break;
-			case WireHair::Helper::CandRError::C_NeedNoRepair:
+			case NZArchive::WireHairHelper::CandRError::C_NeedNoRepair:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_NEEDNOREPAIR", L"Archive need no reparation "));
 				break;
-			case WireHair::Helper::CandRError::C_CantCreateRepairFile:
+			case NZArchive::WireHairHelper::CandRError::C_CantCreateRepairFile:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_CANTCREATEREPAIRFILE", L"Can't create repaired archive file "));
 				break;
-			case WireHair::Helper::CandRError::C_UnknownError:
+			case NZArchive::WireHairHelper::CandRError::C_UnknownError:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_UNKNOWNERROR", L"An unknown error happened "));
 				break;
-			case WireHair::Helper::CandRError::C_RepairSuccess:
+			case NZArchive::WireHairHelper::CandRError::C_RepairSuccess:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_REPAIRSUCCESS", L"Reparation of the archive is successful "));
 				break;
-			case WireHair::Helper::CandRError::C_RepairFailedNotEnoughBlockToRepair:
+			case NZArchive::WireHairHelper::CandRError::C_RepairFailedNotEnoughBlockToRepair:
 				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_C_NOTENOUGHBLOCK", L"Reparation failed, not enough recovery parts available... "));
+				break;
+			case NZArchive::WireHairHelper::CandRError::G_UserInterrupted:
+				InsertItemListbox(hINT_LISTBOX, TRANSLATE(L"LBL_INT_USERINTERRUPTED", L"Operation interrupted by user... "));
 				break;
 			default:
 				break;
 			}
 
-			if (Result == WireHair::Helper::CandRError::C_NeedNoRepair || Result == WireHair::Helper::CandRError::C_RepairSuccess)
+			if (Result == NZArchive::WireHairHelper::CandRError::C_NeedNoRepair || Result == NZArchive::WireHairHelper::CandRError::C_RepairSuccess || Result == NZArchive::WireHairHelper::CandRError::G_UserInterrupted)
 				NPARAnalysisConform = true;
 			else
 				NPARAnalysisConform = false;
@@ -3077,6 +3091,12 @@ INT_PTR CALLBACK IntegrityChecking(HWND hDlg, UINT message, WPARAM wParam, LPARA
 	case WM_COMMAND:
 		switch (LOWORD(wParam))
 		{
+		case IDC_CHECK_CANCEL:
+		{
+			wireHelper.StopOperation();
+			EnableWindow(GetDlgItem(hDlg, IDC_CHECK_CANCEL), false);
+		}
+		break;
 		case KillThisDialog:
 		{
 			cTASKBar.setProgressState(g_hWnd, TBPF_NOPROGRESS);
@@ -3516,4 +3536,29 @@ static LRESULT CALLBACK lvWndProc(const HWND hWnd, const UINT message, const WPA
 		//Assume that GWLP_USERDATA has been set to the original window procedure.
 		return CallWindowProc((WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA), hWnd, message, wParam, lParam);
 	}
+}
+
+LRESULT CALLBACK subEditProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+	case WM_KEYDOWN:
+		switch (wParam)
+		{
+		case VK_RETURN:
+		{
+			auto buffer = std::make_unique<wchar_t[]>(MAX_PATH_EX);
+			GetWindowText(wnd, (LPWSTR)buffer.get(), MAX_PATH_EX);
+			CREATE_PATHARCHIVE = pHelper::NormalizePath(std::wstring(buffer.get()));
+			PostMessage(GetParent(wnd), WM_COMMAND, IDC_CREATE_BTN_Start, 0);
+			buffer.reset();
+			buffer.release();
+		}
+		break;
+		//If not your key, skip to default:
+		}
+	default:
+		return CallWindowProc(oldEditProc, wnd, msg, wParam, lParam);
+	}
+	return 0;
 }

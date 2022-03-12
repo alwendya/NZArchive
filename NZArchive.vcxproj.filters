@@ -117,6 +117,30 @@
     <Image Include="ExtraFiles\NotifyBOX.ico">
       <Filter>Fichiers de ressources</Filter>
     </Image>
+    <Image Include="ExtraFiles\nza_file_add.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\nza_archive_info.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\nza_new_archive.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\nza_file_delete.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\nza_archive_extract_single.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\nza_archive_extract_selection.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\nza_open_archive.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
+    <Image Include="ExtraFiles\nza_archive_test.ico">
+      <Filter>Fichiers de ressources</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <None Include="ExtraFiles\RobotoCondensed-Regular.ttf.zstd" />

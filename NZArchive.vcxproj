@@ -72,21 +72,26 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)Intermediate\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)Intermediate\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);include</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);libs</LibraryPath>
     <TargetName>NZArchive</TargetName>
+    <IntDir>$(SolutionDir)Intermediate\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LinkIncremental>false</LinkIncremental>
     <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);include</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);libs</LibraryPath>
     <TargetName>NZArchive</TargetName>
+    <IntDir>$(SolutionDir)Intermediate\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -232,6 +237,8 @@ IF EXIST "$(SolutionDir)ExtraFiles\7zr.exe" (
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -296,6 +303,14 @@ IF EXIST "$(SolutionDir)ExtraFiles\7zr.exe" (
     <Image Include="ExtraFiles\NotifyBOX.ico" />
     <Image Include="ExtraFiles\NZAico64.ico" />
     <Image Include="ExtraFiles\NZArchive.ico" />
+    <Image Include="ExtraFiles\nza_archive_extract_selection.ico" />
+    <Image Include="ExtraFiles\nza_archive_extract_single.ico" />
+    <Image Include="ExtraFiles\nza_archive_info.ico" />
+    <Image Include="ExtraFiles\nza_archive_test.ico" />
+    <Image Include="ExtraFiles\nza_file_add.ico" />
+    <Image Include="ExtraFiles\nza_file_delete.ico" />
+    <Image Include="ExtraFiles\nza_new_archive.ico" />
+    <Image Include="ExtraFiles\nza_open_archive.ico" />
     <Image Include="ExtraFiles\small.ico" />
     <Image Include="ExtraFiles\_ABOUT.png.ico" />
     <Image Include="ExtraFiles\_ADDTO.png.ico" />

@@ -3,19 +3,16 @@
 // Utilisé par NZArchive.rc
 //
 #define IDC_MYICON                      2
-#define IDC_YFC_B_PICK                  3
 #define IDD_NZAGUI_DIALOG               102
 #define IDS_APP_TITLE                   103
 #define IDD_ABOUTBOX                    103
 #define IDM_ABOUT                       104
 #define IDM_EXIT                        105
 #define IDI_NZAGUI                      107
-#define IDI_SMALL                       108
 #define IDC_NZAGUI                      109
 #define IDR_MAINFRAME                   128
 #define IDD_PWDBOX                      129
 #define IDD_ARCHIVE_INFORMATION         130
-#define IDI_Icon_x64                    133
 #define IDD_TestArchive                 135
 #define IDD_ExtractArchive              136
 #define IDD_DeleteFromArchive           137
@@ -39,7 +36,6 @@
 #define IDR_ZSTDFILE1                   158
 #define IDR_ZSTDRobotoCondensedRegularTTF 158
 #define IDI_NBOX                        159
-#define IDD_YesFolderCancel             160
 #define ID_PWD_TEXTBOX                  1000
 #define ID_PWD_OK                       1001
 #define ID_PWD_CANCEL                   1002
@@ -153,9 +149,8 @@
 #define IDC_ABOUT2                      1095
 #define IDC_ABOUT3                      1096
 #define IDC_ADD_DROPLIST_LEVELCOMP      1097
-#define IDC_YFC_EDIT                    1098
-#define IDC_YFC_B_OK                    1099
-#define IDC_YFC_B_CANCEL                1100
+#define IDC_BUTTON1                     1101
+#define IDC_CHECK_CANCEL                1101
 #define ID_FILE_OPENARCHIVE             32771
 #define ID_FILE_ARCHIVEINFORMATION      32772
 #define ID_FILE_CREATEARCHIVE           32773
@@ -193,7 +188,6 @@
 #define ID_MENU_EXTRACTTOWINDOWSEXPLORER 32829
 #define ID_EXTRACTTOWINDOWSEXPLORER_ACTIVEWINDOWS 32830
 #define ID_SETTINGS_ASSOCIATENZARCHIVEWITHNZAFILES 32831
-#define ID_SETTINGS_REMOVENZAASSOCIATION 32832
 #define IDC_STATIC                      -1
 #define IDC_YFC_LABEL                   -1
 
@@ -204,7 +198,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        161
 #define _APS_NEXT_COMMAND_VALUE         32833
-#define _APS_NEXT_CONTROL_VALUE         1101
+#define _APS_NEXT_CONTROL_VALUE         1102
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif
